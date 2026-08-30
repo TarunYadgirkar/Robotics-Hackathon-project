@@ -28,6 +28,7 @@ DEFAULT_BOUNDS_MAX = (0.95, 0.95, 1.00)
 def build_map(
     session: Optional[EnrollmentSession] = None,
     scan_points: Optional[np.ndarray] = None,
+    scan_is_registered: bool = False,
     table: Optional[dict] = None,
     resolution: float = 0.02,
     bounds_min: Sequence[float] = DEFAULT_BOUNDS_MIN,
@@ -45,6 +46,16 @@ def build_map(
             voxel_map.add_box(box.minimum, box.maximum)
 
     if scan_points is not None and len(scan_points):
+        # Both the crop and the self-filter reason in ROBOT coordinates. A scan
+        # straight off the phone is in ARKit's frame, so running them on an
+        # unregistered cloud crops the wrong region and subtracts the arm from
+        # coordinates the arm is not in -- silently, and the result looks fine.
+        if not scan_is_registered:
+            raise ValueError(
+                "scan_points must be registered into the robot frame first. "
+                "Cropping and self-filtering are robot-frame operations; on an "
+                "unregistered scan they produce a plausible-looking wrong map."
+            )
         points = crop_to_workspace(np.asarray(scan_points, dtype=float))
         if kinematics is not None and scan_poses is not None and len(scan_poses):
             before = len(points)

@@ -33,6 +33,7 @@ def main() -> None:
     session = EnrollmentSession.load(args.enrollment) if args.enrollment else None
 
     points = None
+    registered = False
     if args.scan:
         points = load_point_cloud(args.scan)
         print(f"  loaded {len(points):,} points from {args.scan}")
@@ -44,11 +45,16 @@ def main() -> None:
                 pairs = json.load(handle)
             registration = kabsch(np.array(pairs["scan"]), np.array(pairs["robot"]))
             points = registration.apply(points)
+            registered = True
             print(f"  registered: {registration.rmse * 1000:.1f} mm RMSE over {len(pairs['scan'])} pairs")
             if not registration.is_trustworthy:
                 print("  WARNING: residual above 20mm -- re-touch the reference points before planning on this")
+            registered = True
         else:
-            print("  NOTE: no --registration given, so the scan is assumed to already be in the base frame")
+            print("  NOTE: no --registration given. A scan is in the phone's frame until it is")
+            print("        aligned, and everything downstream assumes robot coordinates, so it")
+            print("        will be refused rather than silently mapped into the wrong place.")
+            registered = False
 
     # Every pose the arm was logged in during enrollment, so a continuous sweep
     # can have the arm subtracted along its whole trajectory rather than at one
@@ -64,7 +70,7 @@ def main() -> None:
 
     voxel_map = build_map(
         session=session, scan_points=points, table=table, resolution=args.resolution,
-        kinematics=kinematics, scan_poses=scan_poses,
+        kinematics=kinematics, scan_poses=scan_poses, scan_is_registered=registered,
     )
     voxel_map.save(args.output)
 
