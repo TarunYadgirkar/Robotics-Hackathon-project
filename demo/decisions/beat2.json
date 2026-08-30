@@ -5,9 +5,21 @@
   "match_score": 1.0,
   "coverage_detail": {
     "covered": [
-      {"word": "garment", "closest": "garment", "score": 1.0},
-      {"word": "inside", "closest": "inside", "score": 1.0},
-      {"word": "out", "closest": "out", "score": 1.0}
+      {
+        "word": "garment",
+        "closest": "garment",
+        "score": 1.0
+      },
+      {
+        "word": "inside",
+        "closest": "inside",
+        "score": 1.0
+      },
+      {
+        "word": "out",
+        "closest": "out",
+        "score": 1.0
+      }
     ],
     "uncovered": []
   },

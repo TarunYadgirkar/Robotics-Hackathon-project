@@ -30,6 +30,21 @@ def log(*args):
 def _normalize_coverage(coverage_detail):
     if isinstance(coverage_detail, dict) and "words" in coverage_detail:
         return coverage_detail["words"]
+    # brain/decide.py's real shape: {"covered": [...], "uncovered": [...]},
+    # each entry {word, closest, score}. Found during F's rehearsal.
+    if isinstance(coverage_detail, dict) and (
+        "covered" in coverage_detail or "uncovered" in coverage_detail
+    ):
+        words = []
+        for key, is_covered in (("covered", True), ("uncovered", False)):
+            for entry in coverage_detail.get(key) or []:
+                words.append({
+                    "word": entry.get("word", "?"),
+                    "covered": is_covered,
+                    "best_match": entry.get("closest"),
+                    "score": entry.get("score", 0.0),
+                })
+        return words
     if isinstance(coverage_detail, list):
         return coverage_detail
     raise ValueError(f"unrecognized coverage_detail shape: {type(coverage_detail).__name__}")
@@ -53,7 +68,8 @@ def render_abstain(fig, decision):
     nearest = decision.get("evidence", {}).get("nearest_tasks", [])
     if nearest:
         n_labels = [n.get("task_id", "?") for n in reversed(nearest)]
-        n_scores = [n.get("score", 0.0) for n in reversed(nearest)]
+        # decide.py names this field "coverage"; keep "score" for D's fixtures
+        n_scores = [n.get("score", n.get("coverage", 0.0)) for n in reversed(nearest)]
         ax_near.barh(n_labels, n_scores, color="#3f6fb4")
         ax_near.set_xlim(0, 1)
         ax_near.set_title("nearest known tasks")
@@ -82,30 +98,37 @@ def render_ask(fig, decision):
     slots = decision.get("utterance_slots", {})
     task_id = decision.get("matched_task_id") or slots.get("task", "?")
 
+    # Amended framing (orchestrator, in-session): A's real data never produces a
+    # balanced two-method split on a deconfounded task -- every clean split is
+    # majority-vs-outlier (e.g. 8-1). The panel shows majority vs outlier, not
+    # "cluster a / cluster b", and always surfaces p even when p > 0.05 -- the
+    # non-significance at this n is the honest point, not a flaw to hide.
     entry = _variance_entry_for(decision.get("matched_task_id"))
     labels = entry.get("labels") if entry else None
+
+    maj_n = evidence.get("cluster_maj_n", slots.get("cluster_maj_n"))
+    min_n = evidence.get("cluster_min_n", slots.get("cluster_min_n"))
+    source = "decision JSON"
 
     if labels:
         counts = {}
         for lab in labels:
             counts[lab] = counts.get(lab, 0) + 1
-        keys = sorted(counts)
-        ax.bar([f"cluster {k}" for k in keys], [counts[k] for k in keys],
-               color=["#3f6fb4", "#e08a2c", "#8a5fd6"][:len(keys)])
-        ax.set_title(f"{task_id} — {len(labels)} clips, {len(keys)} methods (from variance.json)")
+        sizes = sorted(counts.values(), reverse=True)
+        maj_n, min_n = sizes[0], sum(sizes[1:])
+        source = "variance.json"
+
+    if maj_n is not None and min_n is not None:
+        ax.bar(["majority", "outlier"], [maj_n, min_n], color=["#3f6fb4", "#c94545"])
+        ax.set_title(f"{task_id} — {maj_n} did it one way, {min_n} did something different (from {source})")
     else:
-        a = evidence.get("cluster_a_n", slots.get("cluster_a_n"))
-        b = evidence.get("cluster_b_n", slots.get("cluster_b_n"))
-        if a is not None and b is not None:
-            ax.bar(["cluster a", "cluster b"], [a, b], color=["#3f6fb4", "#e08a2c"])
-            ax.set_title(f"{task_id} — cluster sizes (from decision JSON; variance.json unavailable)")
-        else:
-            ax.axis("off")
-            ax.text(0.5, 0.5, "no cluster data available", ha="center", va="center")
+        ax.axis("off")
+        ax.text(0.5, 0.5, "no cluster data available", ha="center", va="center")
 
     silhouette = evidence.get("silhouette", evidence.get("silhouette_k2", slots.get("silhouette")))
     perm_p = evidence.get("perm_p", slots.get("perm_p"))
-    fig.suptitle(f"ASK — silhouette {silhouette}, p = {perm_p}", fontsize=20, fontweight="bold")
+    fig.suptitle(f"ASK — majority vs. outlier — silhouette {silhouette}, p = {perm_p} (n too small to rule out chance)",
+                 fontsize=18, fontweight="bold")
 
 
 def render_act(fig, decision):

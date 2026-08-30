@@ -1,0 +1,37 @@
+{
+  "query": "garment iron press",
+  "tier": "act",
+  "matched_task_id": "garment-iron-press",
+  "match_score": 1.0,
+  "coverage_detail": {
+    "covered": [
+      {
+        "word": "garment",
+        "closest": "garment",
+        "score": 1.0
+      },
+      {
+        "word": "iron",
+        "closest": "iron",
+        "score": 1.0
+      },
+      {
+        "word": "press",
+        "closest": "press",
+        "score": 1.0
+      }
+    ],
+    "uncovered": []
+  },
+  "evidence": {
+    "silhouette_k2": 0.0625,
+    "perm_p": 0.119,
+    "n_clips": 8,
+    "family_confounded": false,
+    "camera_confounded": false
+  },
+  "utterance_slots": {
+    "task": "Garment Iron Press",
+    "n_clips": 8
+  }
+}

@@ -18,8 +18,16 @@ outer schema, but the contract Agent D and Agent B need to agree on in
 integration — see voice/fixtures/*.json for worked examples):
     abstain:                query, hours, n_tasks, near1, near2
     abstain (post-feedback): n_live_demos, n_live_demonstrators, live_stat_line
-    ask:                    n_clips, task, k, silhouette, perm_p, cluster_a_n, cluster_b_n
+    ask:                    n_clips, task, cluster_maj_n, cluster_min_n, silhouette, perm_p
     act:                    (none — act-silent speaks nothing)
+
+Orchestrator amendment (2026-08-30, user-approved): Agent A's real data shows
+no deconfounded task splits into two balanced methods -- every clean split
+is majority-vs-outlier (e.g. 8-1, p~=0.11, not significant). BEAT 2 is now an
+honest majority-vs-outlier ask instead of a "two balanced methods" ask; the
+p-value disclosure is deliberate and must not be dropped even though it is
+often > 0.05 (that is the honest point -- with this few clips we cannot rule
+out chance). This replaced the earlier k/cluster_a_n/cluster_b_n ask slots.
 """
 import argparse
 import json
@@ -52,9 +60,10 @@ TEMPLATES = {
         "measured: {live_stat_line}."
     ),
     "ask": (
-        "I have {n_clips} demonstrations of {task}. They split into {k} distinct methods "
-        "— silhouette {silhouette}, p equals {perm_p}. {cluster_a_n} workers did it one "
-        "way, {cluster_b_n} another. Which do you want?"
+        "I have {n_clips} demonstrations of {task}. {cluster_maj_n} do it one way. "
+        "{cluster_min_n} does something different - silhouette {silhouette}, though "
+        "with {n_clips} clips I cannot rule out chance: p equals {perm_p}. Should I "
+        "follow the majority, or does the outlier matter?"
     ),
     "act": "",  # act-silent: speaks nothing, per the frozen contract
 }
