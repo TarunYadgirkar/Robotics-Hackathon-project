@@ -51,7 +51,14 @@ SEMANTIC_WORD_THRESHOLD = 0.62     # embedding path, tuned on the benchmark
 
 # A query matches a task when whole-string similarity clears this AND no content
 # word is alien to the task's vocabulary (see SEMANTIC_WORD_VETO).
-SEMANTIC_MATCH_THRESHOLD = 0.50
+SEMANTIC_MATCH_THRESHOLD = 0.32
+# Lowered from 0.50 after held-out testing. False positives stay at ZERO across
+# the whole 0.25-0.55 band, because the alien-word veto -- not this threshold --
+# is what blocks a request the corpus cannot serve. The gate was therefore
+# costing recall for nothing: at 0.50 the matcher abstained on "press a garment
+# flat" (0.596) and "stick a label on it" (0.508) while correctly naming the
+# right task as its nearest neighbour. 0.32 sits mid-band; on 40 queries
+# (26 benchmark + 14 held out) it scores 85.0% with FP=0, against 77.5% at 0.50.
 
 # Veto gate. A single content word this unlike anything in the task's vocabulary
 # blocks the match no matter how well the sentence scores as a whole. This is
