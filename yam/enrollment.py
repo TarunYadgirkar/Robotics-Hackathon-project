@@ -213,6 +213,24 @@ class EnrollmentSession:
         return boxes
 
 
+def recompute_positions(session: "EnrollmentSession", kinematics) -> int:
+    """Rebuild every captured position from its stored joint angles.
+
+    Enrollment originally recorded the gripper *frame origin*, which sits 134mm
+    behind the jaw tips that actually touch the object, so every point was that
+    far out. Because each capture stored the joint configuration alongside the
+    position, old sessions can be corrected rather than re-collected.
+    """
+    corrected = 0
+    for obstacle in session.objects:
+        for point in obstacle.points:
+            position = kinematics.probe_position(point.joint_angles)
+            if not np.allclose(position, point.position, atol=1e-6):
+                point.position = [float(v) for v in position]
+                corrected += 1
+    return corrected
+
+
 def touch_repeatability(kinematics, joint_configurations: Sequence[Sequence[float]]) -> Dict:
     """Spread of FK positions for the same physical point touched from different poses.
 

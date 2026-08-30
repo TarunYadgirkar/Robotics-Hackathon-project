@@ -184,7 +184,7 @@ def main() -> None:
                         continue
                     consecutive_faults = 0
                     q = list(state.positions)
-                tip = kinematics.tip_position(q)
+                tip = kinematics.probe_position(q)   # the jaws, not the wrist frame
                 obstacle = session.current
 
                 command = server.next_command()

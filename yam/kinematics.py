@@ -158,6 +158,7 @@ class YamKinematics:
             self.joint_order.append(joint.name)
 
         self.link_geometry: Dict[str, LinkGeometry] = {}
+        self._probe_offset: Optional[np.ndarray] = None
         if load_geometry:
             self._load_geometry(root)
 
@@ -215,12 +216,48 @@ class YamKinematics:
         return frames
 
     def tip_position(self, q: Sequence[float]) -> np.ndarray:
-        """World position of the gripper frame origin.
+        """World position of the gripper *frame origin*.
 
-        Independent of jaw opening: this is the wrist frame the jaws hang off,
-        which is what makes it a stable probe point for enrollment.
+        This is not where the jaws are. It sits 147mm behind the jaw tips, so it
+        is the wrong point to record when someone touches an object with the
+        jaws -- use `probe_position` for that.
         """
         return self.link_transforms(q)["gripper"][:3, 3]
+
+    def probe_offset(self) -> np.ndarray:
+        """Jaw tip relative to the gripper frame, from the tip meshes themselves.
+
+        Measured rather than assumed: the furthest vertex of each jaw mesh,
+        averaged across the two jaws so the point sits on the centreline between
+        them. This is what actually contacts an object when the arm is used as a
+        probe, and it is 147mm from the frame origin -- larger than the planner's
+        whole collision margin, so recording the origin instead puts every
+        enrolled obstacle 147mm out.
+        """
+        if self._probe_offset is not None:
+            return self._probe_offset
+
+        frames = self.link_transforms([0.0] * 6, gripper_opening=1.0)
+        gripper = frames["gripper"]
+        rotation = gripper[:3, :3]
+        extremes = []
+
+        for name in ("tip_left", "tip_right"):
+            geometry = self.link_geometry.get(name)
+            if geometry is None or len(geometry.centers) == 0 or name not in frames:
+                continue
+            frame = frames[name]
+            world = geometry.centers @ frame[:3, :3].T + frame[:3, 3]
+            local = (world - gripper[:3, 3]) @ rotation
+            extremes.append(local[np.argmax(np.linalg.norm(local, axis=1))])
+
+        self._probe_offset = np.mean(extremes, axis=0) if extremes else np.zeros(3)
+        return self._probe_offset
+
+    def probe_position(self, q: Sequence[float], gripper_opening: float = 1.0) -> np.ndarray:
+        """World position of the jaw tips -- where the arm actually touches things."""
+        gripper = self.link_transforms(q, gripper_opening)["gripper"]
+        return gripper[:3, 3] + gripper[:3, :3] @ self.probe_offset()
 
     def jaw_gap(self, q: Sequence[float], gripper_opening: float = 1.0) -> float:
         """Opening between the jaws in metres, measured along the axis they travel.

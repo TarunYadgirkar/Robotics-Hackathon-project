@@ -31,6 +31,13 @@ def main() -> None:
 
     kinematics = YamKinematics()
     session = EnrollmentSession.load(args.enrollment) if args.enrollment else None
+    if session is not None:
+        from yam.enrollment import recompute_positions
+
+        corrected = recompute_positions(session, kinematics)
+        if corrected:
+            print(f"  corrected {corrected} captured points to the jaw tips "
+                  f"(sessions recorded before the probe offset was measured are 134mm out)")
 
     points = None
     registered = False
