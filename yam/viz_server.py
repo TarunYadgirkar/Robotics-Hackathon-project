@@ -33,6 +33,9 @@ class VizServer:
         self.upload_dir = upload_dir or os.getcwd()
         self.static_payloads: Dict[str, Any] = {}
         self.uploads: list = []
+        self.scan_summary: Optional[Dict[str, Any]] = None
+        self.scan_points = None          # numpy array, downsampled for the viewer
+        self.registration: Optional[Dict[str, Any]] = None
         #: Guards the API once the server is reachable beyond this machine. The
         #: page is served freely so it can load and read the token out of its own
         #: URL; the endpoints that capture points and write files are not.
@@ -52,6 +55,38 @@ class VizServer:
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
             return dict(self._state)
+
+    def merge_scan(self, fresh, margin: float = 0.05):
+        """Fold a new sweep into the stored one, replacing what it re-observed.
+
+        Re-scanning a patch has to *override* it, not add to it: the usual reason
+        to re-scan is that something transient was captured -- a hand, an arm, a
+        person -- and simply unioning the clouds keeps the ghost forever. Points
+        inside the new sweep's bounding box are dropped before the new ones go
+        in, so whatever was there before is replaced by what is there now.
+
+        A full-room re-scan therefore replaces everything, which is what one
+        would expect, and a small patch touches only that patch.
+
+        This does NOT remove something that floated in front of a surface -- a
+        hand held between the phone and a wall leaves points at the hand's depth,
+        and re-scanning the wall produces points at the wall's depth, whose
+        bounding box need never contain the hand. Removing that needs either
+        free-space carving along the camera rays or the explicit erase below.
+        """
+        import numpy as np
+
+        fresh = np.asarray(fresh, dtype=float).reshape(-1, 3)
+        if self.scan_points is None or len(self.scan_points) == 0 or len(fresh) == 0:
+            return fresh, 0
+
+        existing = np.asarray(self.scan_points, dtype=float)
+        low = fresh.min(axis=0) - margin
+        high = fresh.max(axis=0) + margin
+        inside = np.all((existing >= low) & (existing <= high), axis=1)
+
+        kept = existing[~inside]
+        return np.vstack([kept, fresh]), int(inside.sum())
 
     @staticmethod
     def lan_address() -> Optional[str]:
@@ -115,6 +150,26 @@ class VizServer:
                 if route == "/api/state":
                     self._send_json(server.snapshot())
                     return
+                if route == "/api/scan_summary":
+                    self._send_json(server.scan_summary or {})
+                    return
+                if route == "/api/scan_points":
+                    if server.scan_points is None:
+                        self._send_json({"points": [], "registered": False})
+                        return
+                    points = server.scan_points
+                    if server.registration is not None:
+                        import numpy as np
+
+                        rotation = np.array(server.registration["rotation"])
+                        translation = np.array(server.registration["translation"])
+                        points = points @ rotation.T + translation
+                    self._send_json({
+                        "points": [round(float(v), 4) for v in points.ravel()],
+                        "registered": server.registration is not None,
+                        "rmse_mm": None if server.registration is None else server.registration["rmse_mm"],
+                    })
+                    return
                 if route.startswith("/api/static/"):
                     key = route[len("/api/static/"):]
                     if key in server.static_payloads:
@@ -129,6 +184,12 @@ class VizServer:
             def do_POST(self):
                 if not self._authorized():
                     self._send_json({"error": "unauthorized"}, 401)
+                    return
+                if self.path.startswith("/api/scan_erase"):
+                    self._erase()
+                    return
+                if self.path.startswith("/api/register"):
+                    self._register()
                     return
                 if self.path.startswith("/api/scan"):
                     self._receive_scan()
@@ -146,6 +207,63 @@ class VizServer:
                 if action:
                     server.commands.put(action)
                 self._send_json({"accepted": bool(action)})
+
+            def _erase(self):
+                """Delete scanned geometry inside a sphere.
+
+                The direct answer to a transient object caught in the sweep: the
+                operator can see the artefact, so let them point at it, rather
+                than inferring it from geometry that cannot distinguish a hand
+                from a shelf.
+                """
+                length = int(self.headers.get("Content-Length", 0))
+                try:
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    centre = payload["centre"]
+                    radius = float(payload.get("radius", 0.25))
+                except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                    self._send_json({"error": "expected {centre: [x,y,z], radius: r}"}, 400)
+                    return
+
+                if server.scan_points is None or not len(server.scan_points):
+                    self._send_json({"error": "no scan to erase from"}, 400)
+                    return
+
+                import numpy as np
+
+                points = np.asarray(server.scan_points, dtype=float)
+                keep = np.linalg.norm(points - np.array(centre, dtype=float), axis=1) > radius
+                removed = int((~keep).sum())
+                server.scan_points = points[keep]
+                self._send_json({"removed": removed, "remaining": int(keep.sum())})
+
+            def _register(self):
+                """Align the uploaded scan to the robot frame from paired points."""
+                length = int(self.headers.get("Content-Length", 0))
+                try:
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                except json.JSONDecodeError:
+                    self._send_json({"error": "bad json"}, 400)
+                    return
+
+                try:
+                    import numpy as np
+
+                    from yam.lidar import kabsch
+
+                    result = kabsch(np.array(payload["scan"]), np.array(payload["robot"]))
+                except Exception as error:
+                    self._send_json({"error": str(error)}, 400)
+                    return
+
+                server.registration = {
+                    "rotation": result.rotation.tolist(),
+                    "translation": result.translation.tolist(),
+                    "rmse_mm": round(result.rmse * 1000, 1),
+                    "pairs": len(payload["scan"]),
+                    "trustworthy": bool(result.is_trustworthy),
+                }
+                self._send_json(server.registration)
 
             def _receive_scan(self):
                 """Accept a scan file uploaded from the phone that captured it."""
@@ -167,7 +285,34 @@ class VizServer:
 
                 server.uploads.append(destination)
                 server.commands.put("scan_uploaded")
-                self._send_json({"saved": destination, "bytes": length - remaining})
+
+                summary = {"saved": destination, "bytes": length - remaining}
+                try:
+                    import numpy as np
+
+                    from yam.lidar import load_point_cloud
+
+                    points = load_point_cloud(destination)
+                    summary["points"] = int(len(points))
+                    summary["extent_m"] = [round(float(v), 3) for v in (points.max(axis=0) - points.min(axis=0))]
+                    # Thin it for the browser: a phone scan is hundreds of
+                    # thousands of points and the viewer only needs enough to
+                    # recognise the room and click a feature.
+                    step = max(1, len(points) // 40000)
+                    fresh = points[::step]
+
+                    merged, replaced = server.merge_scan(fresh)
+                    summary["points_kept"] = int(len(merged))
+                    summary["points_replaced"] = int(replaced)
+                    server.scan_points = merged
+                    server.registration = None
+                    server.scan_summary = summary
+                except Exception as error:
+                    # A scan we cannot parse is worth reporting, not worth failing
+                    # the upload over -- the file is on disk either way.
+                    summary["parse_error"] = str(error)
+                    server.scan_summary = summary
+                self._send_json(summary)
 
         self._server = ThreadingHTTPServer((self.host, self.port), Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)

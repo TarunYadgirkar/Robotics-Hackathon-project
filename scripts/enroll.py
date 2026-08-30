@@ -11,6 +11,7 @@ The viewer opens at http://127.0.0.1:8420/.
 """
 
 import argparse
+import glob
 import os
 import sys
 import threading
@@ -18,9 +19,10 @@ import time
 import webbrowser
 from contextlib import contextmanager
 
+import can
 import numpy as np
 
-from yam.arm import ARM_JOINTS, connected_arm
+from yam.arm import ARM_JOINTS, MotorCommunicationError, MotorFaultError, connected_arm
 from yam.enrollment import EnrollmentSession, touch_repeatability
 from yam.kinematics import YamKinematics
 from yam.mesh_export import export_arm_meshes
@@ -62,6 +64,13 @@ def main() -> None:
                         help="0.0.0.0 lets the phone that does the LiDAR scan open the viewer; "
                              "use 127.0.0.1 to keep it on this machine only")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--fresh-scan", action="store_true",
+                        help="ignore any scan already on disk instead of adopting the newest")
+    parser.add_argument("--linger", type=float, default=180.0,
+                        help="seconds to keep the viewer up after finishing, so the phone sees the result")
+    parser.add_argument("--tunnel", action="store_true",
+                        help="expose the viewer through a Cloudflare quick tunnel, for networks "
+                             "like eduroam that block phone-to-laptop traffic")
     parser.add_argument("--validate-fk", action="store_true",
                         help="touch one fixed point repeatedly and report the spread")
     parser.add_argument("--simulate", action="store_true",
@@ -74,12 +83,42 @@ def main() -> None:
 
     server = VizServer(port=args.port, host=args.host)
     server.static_payloads["meshes"] = export_arm_meshes(kinematics)
+
+    # Adopt the most recent scan on disk. A scan survives a server restart as a
+    # file, but used to live only in the previous process's memory, so the phone
+    # showed nothing and there was no way to erase from it or align it.
+    existing = sorted(glob.glob("phone_scan_*.ply") + glob.glob("*.ply"), key=os.path.getmtime)
+    if existing and not args.fresh_scan:
+        try:
+            from yam.lidar import load_point_cloud
+
+            points = load_point_cloud(existing[-1])
+            step = max(1, len(points) // 40000)
+            server.scan_points = points[::step]
+            server.uploads.append(os.path.abspath(existing[-1]))
+            print(f"  adopted existing scan {existing[-1]} ({len(points):,} points)")
+        except Exception as error:
+            print(f"  could not read {existing[-1]}: {error}")
     url = server.start()
     addresses = server.urls()
 
     print(f"\n  Viewer:      {addresses['local']}")
-    if addresses["lan"]:
-        print(f"  From phone:  {addresses['lan']}   (same wifi; anyone on this network can reach it)")
+    if args.tunnel:
+        # In a thread: bringing the tunnel up takes ~20s, and motors left without
+        # a command stream for that long latch a comms timeout before enrollment
+        # even starts.
+        def announce_tunnel():
+            public = server.start_tunnel()
+            if public:
+                print(f"\n  From phone:  {public}/?k={server.token}")
+                print("               Public URL -- the API is token-guarded, so use the whole link.\n", flush=True)
+            else:
+                print("\n  Tunnel failed to start (is cloudflared installed?).\n", flush=True)
+
+        print("  Opening a public tunnel in the background...", flush=True)
+        threading.Thread(target=announce_tunnel, daemon=True).start()
+    elif addresses["lan"]:
+        print(f"  From phone:  {addresses['lan']}   (same wifi; blocked on eduroam -- use --tunnel)")
     print("  The arm is limp -- support it. Space/Enter captures, U undoes, N next object, F finishes.")
     print("  Scanning with a phone? Keep this running: the arm's pose is logged throughout,")
     print("  so it can be subtracted from the sweep afterwards.\n")
@@ -91,6 +130,7 @@ def main() -> None:
     message = ""
     message_kind = ""
     finished = False
+    consecutive_faults = 0
 
     def simulated_pose(elapsed: float):
         return [
@@ -105,6 +145,13 @@ def main() -> None:
     try:
         with open_arm(args.simulate) as arm:
             if arm is not None:
+                # Motors latch a comms-timeout whenever something left them
+                # enabled without a command stream, and read_state() refuses to
+                # run against a latched motor. Clear that one code, report the
+                # rest, and carry on.
+                stale = arm.recover_stale_motors()
+                if stale:
+                    print(f"  cleared comms-timeout latch on: {', '.join(stale)}")
                 arm.enable()
             started = time.time()
 
@@ -113,16 +160,42 @@ def main() -> None:
                     q = simulated_pose(time.time() - started)
                     state = None
                 else:
-                    state = arm.read_state()      # zero gains: reading never applies torque
+                    try:
+                        state = arm.read_state()  # zero gains: reading never applies torque
+                    except (MotorCommunicationError, MotorFaultError, can.CanError, OSError) as fault:
+                        # One dropped frame or one latched motor should not end a
+                        # session someone is halfway through. Recover in place and
+                        # say so, rather than losing the captured points.
+                        consecutive_faults += 1
+                        message, message_kind = f"recovering: {fault}", "warn"
+                        print(f"  {fault} -- recovering", flush=True)
+                        if consecutive_faults > 20:
+                            raise
+                        try:
+                            if isinstance(fault, (can.CanError, OSError)):
+                                # The adapter itself went away; motor-level
+                                # recovery cannot work until the bus is back.
+                                arm.reconnect()
+                            arm.recover_stale_motors()
+                            arm.enable()
+                        except Exception:
+                            pass
+                        time.sleep(0.05)
+                        continue
+                    consecutive_faults = 0
                     q = list(state.positions)
                 tip = kinematics.tip_position(q)
                 obstacle = session.current
 
                 command = server.next_command()
-                if command in ("capture", ""):
+                if command in ("capture", "reference", ""):
                     if command == "capture":
                         session.capture(tip, q)
-                        message, message_kind = f"captured point {len(obstacle.points)}", ""
+                        message, message_kind = f"captured point {len(obstacle.positions())}", ""
+                    elif command == "reference":
+                        session.capture(tip, q, label=EnrollmentSession.REFERENCE_LABEL)
+                        message = f"reference {len(session.reference_points())} set -- now tap it in the scan"
+                        message_kind = ""
                 elif command == "undo":
                     message = "undid last point" if session.undo() else "nothing to undo"
                     message_kind = "" if session.current.points else "warn"
@@ -148,8 +221,9 @@ def main() -> None:
                     "joints": q,
                     "tip": tip.tolist(),
                     "link_transforms": {name: matrix.ravel().tolist() for name, matrix in transforms.items()},
-                    "points": [p.position for p in obstacle.points],
-                    "point_count": len(obstacle.points),
+                    "points": obstacle.positions().tolist(),
+                    "point_count": len(obstacle.positions()),
+                    "references": [p.position for p in session.reference_points()],
                     "patches": obstacle.patch_coverage().tolist(),
                     "progress": obstacle.progress,
                     "box_min": None if bounds is None else bounds[0].tolist(),
@@ -182,18 +256,42 @@ def main() -> None:
             print("\n  need at least 3 touches to judge repeatability")
 
     session.save(args.output)
-    server.update({**server.snapshot(), "status": "finished"})
 
+    summary = []
     print(f"\n  saved {args.output}  ({len(session.pose_log)} arm poses logged for scan subtraction)")
     for obstacle in session.objects:
         bounds = obstacle.bounds()
         if bounds is None:
             print(f"    {obstacle.name}: no points")
+            summary.append({"name": obstacle.name, "points": 0})
             continue
         size = (bounds[1] - bounds[0]) * 1000
-        print(f"    {obstacle.name}: {len(obstacle.points)} points -> box {size[0]:.0f} x {size[1]:.0f} x {size[2]:.0f} mm")
+        print(f"    {obstacle.name}: {len(obstacle.positions())} points -> "
+              f"box {size[0]:.0f} x {size[1]:.0f} x {size[2]:.0f} mm")
+        summary.append({
+            "name": obstacle.name,
+            "points": len(obstacle.positions()),
+            "box_mm": [round(float(v)) for v in size],
+        })
 
-    time.sleep(0.5)
+    # Keep serving after the arm is released. Finish used to stop the server
+    # immediately, so the phone's next poll failed and the operator was left
+    # guessing whether anything had been saved.
+    server.update({
+        "status": "finished",
+        "saved_to": os.path.abspath(args.output),
+        "objects": summary,
+        "pose_samples": len(session.pose_log),
+        "scans": [os.path.basename(path) for path in server.uploads],
+        "reference_count": len(session.reference_points()),
+    })
+
+    print(f"\n  Motors released. The viewer stays up for {args.linger:.0f}s so the phone can")
+    print("  show the result -- Ctrl-C to stop it sooner.")
+    try:
+        time.sleep(args.linger)
+    except KeyboardInterrupt:
+        pass
     server.stop()
 
 

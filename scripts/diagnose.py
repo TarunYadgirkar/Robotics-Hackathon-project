@@ -6,6 +6,7 @@ No torque is ever commanded.
 Usage: python scripts/diagnose.py
 """
 
+import argparse
 import time
 
 import can
@@ -13,10 +14,15 @@ from gs_usb.gs_usb import GsUsb
 
 from yam import can_compat  # noqa: F401
 from yam.arm import ARM_JOINTS, CAN_BITRATE, GRIPPER_JOINT
-from yam.dm_motor import DISABLE, ENABLE, FEEDBACK_ID_OFFSET, decode_feedback
+from yam.dm_motor import CLEAR_ERROR, DISABLE, ENABLE, FEEDBACK_ID_OFFSET, decode_feedback
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--clear", action="store_true",
+                        help="clear latched motor errors before reporting")
+    args = parser.parse_args()
+
     adapters = GsUsb.scan()
     print(f"1. USB adapter: {'found' if adapters else 'NOT FOUND'}")
     if not adapters:
@@ -28,6 +34,17 @@ def main() -> None:
     print(f"2. CAN bus opened at {CAN_BITRATE // 1000} kbit/s")
 
     joints = ARM_JOINTS + [GRIPPER_JOINT]
+
+    if args.clear:
+        for joint in joints:
+            for _ in range(3):
+                bus.send(can.Message(arbitration_id=joint.motor_id,
+                                     data=bytearray(CLEAR_ERROR), is_extended_id=False))
+                time.sleep(0.002)
+        while bus.recv(timeout=0.01):
+            pass
+        print("   cleared latched errors")
+
     acknowledged = 0
     responded = []
 

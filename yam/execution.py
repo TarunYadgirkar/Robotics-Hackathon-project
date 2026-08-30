@@ -50,9 +50,16 @@ class ExecutionAborted(RuntimeError):
 @dataclass
 class GuardLimits:
     #: Nm a joint may deviate from its own recent torque before we call it contact.
-    max_torque_residual: float = 2.5
-    #: Hard backstop for a gradual squeeze that never produces a step. Above the
-    #: ~11Nm this arm draws under its own weight, so it only catches real trouble.
+    #: Per-joint, not uniform: measured over 7234 samples of a full wave, the
+    #: peak residual ranges from 0.03Nm on joint1 to 3.09Nm on joint3, which
+    #: legitimately steps that hard breaking away from stiction on a lift. One
+    #: number cannot serve both -- 2.5Nm false-trips joint3 and is ~10x too
+    #: loose to notice anything happening at the wrist. These are roughly 1.5x
+    #: each joint's measured peak, with a floor so no joint is hair-trigger.
+    max_torque_residual: Sequence[float] = (0.5, 1.5, 4.5, 2.0, 0.8, 0.8)
+    #: Hard backstop for a gradual squeeze that never produces a step. A soak
+    #: measured 12.36Nm under ordinary load, so the headroom here is about 0.6Nm
+    #: -- deliberately tight, and worth re-measuring before it is raised.
     absolute_torque: float = 13.0
     #: Generous, because gravity sag alone reaches ~0.22 rad on this arm. This is
     #: a backstop, not the primary signal.
@@ -84,6 +91,15 @@ class GuardedExecutor:
         self._baseline: Optional[np.ndarray] = None
         self._elapsed = 0.0
 
+    def _residual_allowance(self, count: int) -> np.ndarray:
+        allowance = np.atleast_1d(np.asarray(self.limits.max_torque_residual, dtype=float))
+        if allowance.size == 1:
+            return np.full(count, float(allowance[0]))
+        if allowance.size < count:
+            # A gripper appended to the arm joints inherits the tightest allowance.
+            return np.concatenate([allowance, np.full(count - allowance.size, allowance.min())])
+        return allowance[:count]
+
     def _update_baseline(self, torque: np.ndarray, period: float) -> np.ndarray:
         """Slow exponential average of torque: what gravity is asking for right now."""
         if self._baseline is None:
@@ -105,13 +121,16 @@ class GuardedExecutor:
         # step change is measured against history rather than against itself.
         if self._baseline is not None and self._elapsed >= self.limits.warmup_seconds:
             residual = np.abs(torque - self._baseline)
-            worst = int(np.argmax(residual))
+            allowance = self._residual_allowance(len(torque))
+            # Rank by how far each joint is through its own allowance, so the
+            # joint in most trouble is reported rather than the loudest one.
+            worst = int(np.argmax(residual / allowance))
             report.peak_torque_residual = max(report.peak_torque_residual, float(residual.max()))
-            if residual[worst] > self.limits.max_torque_residual:
+            if residual[worst] > allowance[worst]:
                 raise ExecutionAborted(
                     f"{self.arm.joints[worst].name} torque jumped {residual[worst]:.2f}Nm above its "
-                    f"gravity baseline ({torque[worst]:+.2f}Nm vs {self._baseline[worst]:+.2f}Nm expected) "
-                    f"-- treating that step as contact",
+                    f"gravity baseline ({torque[worst]:+.2f}Nm vs {self._baseline[worst]:+.2f}Nm expected, "
+                    f"allowance {allowance[worst]:.2f}Nm) -- treating that step as contact",
                     state,
                 )
 

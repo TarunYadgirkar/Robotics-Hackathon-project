@@ -45,7 +45,15 @@ class EnrolledObject:
     padding: float = 0.02
 
     def positions(self) -> np.ndarray:
-        return np.array([p.position for p in self.points], dtype=float).reshape(-1, 3)
+        """Obstacle points only.
+
+        Reference points anchor the scan; they are not part of the object's
+        shape, and folding them into the bounding box would inflate it out to
+        whatever landmark was convenient to touch.
+        """
+        return np.array(
+            [p.position for p in self.points if p.label != "reference"], dtype=float
+        ).reshape(-1, 3)
 
     @property
     def centroid(self) -> np.ndarray:
@@ -132,6 +140,12 @@ class EnrollmentSession:
     @property
     def current(self) -> Optional[EnrolledObject]:
         return self.objects[-1] if self.objects else None
+
+    #: Points touched purely to anchor a LiDAR scan, not to describe an obstacle.
+    REFERENCE_LABEL = "reference"
+
+    def reference_points(self) -> List[CapturedPoint]:
+        return [p for o in self.objects for p in o.points if p.label == self.REFERENCE_LABEL]
 
     def capture(self, position: Sequence[float], joint_angles: Sequence[float], label: str = "") -> CapturedPoint:
         if self.current is None:
