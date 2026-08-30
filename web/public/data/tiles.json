@@ -1,0 +1,260 @@
+{
+  "axle-shaft-cutting": {
+    "clip_id": "clip_322c7pdpympec",
+    "start": 32,
+    "score": 8,
+    "tile": "tiles/clip_322c7pdpympec_32.mp4"
+  },
+  "belly-band-assembly": {
+    "clip_id": "clip_avagqyqnlv4ns",
+    "start": 0,
+    "score": 8,
+    "tile": "tiles/clip_avagqyqnlv4ns_0.mp4"
+  },
+  "binding-pre-fold-stitching": {
+    "clip_id": "clip_uihmkro2gdyoa",
+    "start": 6,
+    "score": 8,
+    "tile": "tiles/clip_uihmkro2gdyoa_6.mp4"
+  },
+  "bottle-surface-buffing": {
+    "clip_id": "clip_dsag5pwzhrjvy",
+    "start": 201,
+    "score": 8,
+    "tile": "tiles/clip_dsag5pwzhrjvy_201.mp4"
+  },
+  "buttonhole-stitching": {
+    "clip_id": "clip_gbsrxgxs7wges",
+    "start": 17,
+    "score": 8,
+    "tile": "tiles/clip_gbsrxgxs7wges_17.mp4"
+  },
+  "cfu-pre-assembly": {
+    "clip_id": "clip_oedxzqksvkhb2",
+    "start": 86,
+    "score": 8,
+    "tile": "tiles/clip_oedxzqksvkhb2_86.mp4"
+  },
+  "cnc-machine-operation": {
+    "clip_id": "clip_fettfa4dkdpbk",
+    "start": 33,
+    "score": 8,
+    "tile": "tiles/clip_fettfa4dkdpbk_33.mp4"
+  },
+  "component-alignment-sticker-application": {
+    "clip_id": "clip_wmtbreo67ki7i",
+    "start": 87,
+    "score": 8,
+    "tile": "tiles/clip_wmtbreo67ki7i_87.mp4"
+  },
+  "drilling": {
+    "clip_id": "clip_uhyxqkzto723u",
+    "start": 22,
+    "score": 8,
+    "tile": "tiles/clip_uhyxqkzto723u_22.mp4"
+  },
+  "electrical-wiring-assembly": {
+    "clip_id": "clip_wlnomf2qhxnim",
+    "start": 31,
+    "score": 8,
+    "tile": "tiles/clip_wlnomf2qhxnim_31.mp4"
+  },
+  "fabric-layering": {
+    "clip_id": "clip_svwwonpywzytm",
+    "start": 104,
+    "score": 8,
+    "tile": "tiles/clip_svwwonpywzytm_104.mp4"
+  },
+  "filter-tube-assembly": {
+    "clip_id": "clip_b7wusfyedfkl6",
+    "start": 124,
+    "score": 8,
+    "tile": "tiles/clip_b7wusfyedfkl6_124.mp4"
+  },
+  "garment-back-panel-attachment": {
+    "clip_id": "clip_q46r6ypdefeb2",
+    "start": 132,
+    "score": 8,
+    "tile": "tiles/clip_q46r6ypdefeb2_132.mp4"
+  },
+  "garment-belly-band-wrapping": {
+    "clip_id": "clip_jypnhiwspszpo",
+    "start": 42,
+    "score": 8,
+    "tile": "tiles/clip_jypnhiwspszpo_42.mp4"
+  },
+  "garment-button-attachment": {
+    "clip_id": "clip_5254kdehah3hw",
+    "start": 4,
+    "score": 8,
+    "tile": "tiles/clip_5254kdehah3hw_4.mp4"
+  },
+  "garment-carton-packing": {
+    "clip_id": "clip_nuz2xwaqbjy46",
+    "start": 67,
+    "score": 8,
+    "tile": "tiles/clip_nuz2xwaqbjy46_67.mp4"
+  },
+  "garment-edge-hemming": {
+    "clip_id": "clip_knq6mwjnci5gs",
+    "start": 187,
+    "score": 8,
+    "tile": "tiles/clip_knq6mwjnci5gs_187.mp4"
+  },
+  "garment-folding-cardboard-insert": {
+    "clip_id": "clip_eqkrqa33ygmik",
+    "start": 88,
+    "score": 8,
+    "tile": "tiles/clip_eqkrqa33ygmik_88.mp4"
+  },
+  "garment-folding-general": {
+    "clip_id": "clip_g5iczzyysr3oo",
+    "start": 0,
+    "score": 8,
+    "tile": "tiles/clip_g5iczzyysr3oo_0.mp4"
+  },
+  "garment-hanger-place": {
+    "clip_id": "clip_f2nhbvc2sjhom",
+    "start": 135,
+    "score": 8,
+    "tile": "tiles/clip_f2nhbvc2sjhom_135.mp4"
+  },
+  "garment-inside-out": {
+    "clip_id": "clip_tlnpjpaehdymk",
+    "start": 148,
+    "score": 8,
+    "tile": "tiles/clip_tlnpjpaehdymk_148.mp4"
+  },
+  "garment-iron-press": {
+    "clip_id": "clip_hixizxd5k656y",
+    "start": 13,
+    "score": 8,
+    "tile": "tiles/clip_hixizxd5k656y_13.mp4"
+  },
+  "garment-label-attachment": {
+    "clip_id": "clip_ib4a3rvadyowa",
+    "start": 0,
+    "score": 8,
+    "tile": "tiles/clip_ib4a3rvadyowa_0.mp4"
+  },
+  "garment-loop-attachment": {
+    "clip_id": "clip_uvs4pvugixdbu",
+    "start": 59,
+    "score": 8,
+    "tile": "tiles/clip_uvs4pvugixdbu_59.mp4"
+  },
+  "garment-packing-general": {
+    "clip_id": "clip_cszwarfix4y7y",
+    "start": 7,
+    "score": 8,
+    "tile": "tiles/clip_cszwarfix4y7y_7.mp4"
+  },
+  "garment-pair-folding": {
+    "clip_id": "clip_5hn4lmwchh7pi",
+    "start": 26,
+    "score": 8,
+    "tile": "tiles/clip_5hn4lmwchh7pi_26.mp4"
+  },
+  "garment-quality-checking": {
+    "clip_id": "clip_7mobpc3apyiz6",
+    "start": 45,
+    "score": 8,
+    "tile": "tiles/clip_7mobpc3apyiz6_45.mp4"
+  },
+  "garment-safety-sticker": {
+    "clip_id": "clip_35vi6xlywi77q",
+    "start": 0,
+    "score": 8,
+    "tile": "tiles/clip_35vi6xlywi77q_0.mp4"
+  },
+  "garment-stitching-general": {
+    "clip_id": "clip_andneqps5fyiq",
+    "start": 228,
+    "score": 8,
+    "tile": "tiles/clip_andneqps5fyiq_228.mp4"
+  },
+  "garment-stitching-overlock": {
+    "clip_id": "clip_kshbvavtgvqy4",
+    "start": 251,
+    "score": 8,
+    "tile": "tiles/clip_kshbvavtgvqy4_251.mp4"
+  },
+  "garment-tag-attachment": {
+    "clip_id": "clip_gxxdr6gnhsaqw",
+    "start": 7,
+    "score": 8,
+    "tile": "tiles/clip_gxxdr6gnhsaqw_7.mp4"
+  },
+  "garment-zip-attachment": {
+    "clip_id": "clip_75pyolzfmzbfq",
+    "start": 11,
+    "score": 8,
+    "tile": "tiles/clip_75pyolzfmzbfq_11.mp4"
+  },
+  "loop-tape-preparation": {
+    "clip_id": "clip_2wixqucp42je2",
+    "start": 0,
+    "score": 8,
+    "tile": "tiles/clip_2wixqucp42je2_0.mp4"
+  },
+  "metal-grinding": {
+    "clip_id": "clip_hcvl74foq7j2g",
+    "start": 93,
+    "score": 8,
+    "tile": "tiles/clip_hcvl74foq7j2g_93.mp4"
+  },
+  "metal-hole-cleaning": {
+    "clip_id": "clip_djubridoxc7gg",
+    "start": 30,
+    "score": 8,
+    "tile": "tiles/clip_djubridoxc7gg_30.mp4"
+  },
+  "milling-machine-operation": {
+    "clip_id": "clip_mjpx62m5ykm6e",
+    "start": 11,
+    "score": 8,
+    "tile": "tiles/clip_mjpx62m5ykm6e_11.mp4"
+  },
+  "notebook-cover-assembly": {
+    "clip_id": "clip_hitnrzyqr23pm",
+    "start": 44,
+    "score": 8,
+    "tile": "tiles/clip_hitnrzyqr23pm_44.mp4"
+  },
+  "oil-seal-pressing": {
+    "clip_id": "clip_54mdrpbksrge2",
+    "start": 9,
+    "score": 8,
+    "tile": "tiles/clip_54mdrpbksrge2_9.mp4"
+  },
+  "panel-fitting-placement": {
+    "clip_id": "clip_gpm4l2ayhsqc6",
+    "start": 42,
+    "score": 8,
+    "tile": "tiles/clip_gpm4l2ayhsqc6_42.mp4"
+  },
+  "plastic-moulding-machine-operation": {
+    "clip_id": "clip_fjenf4behtcls",
+    "start": 64,
+    "score": 8,
+    "tile": "tiles/clip_fjenf4behtcls_64.mp4"
+  },
+  "register-ring-binding": {
+    "clip_id": "clip_nr2saj2enli4w",
+    "start": 0,
+    "score": 8,
+    "tile": "tiles/clip_nr2saj2enli4w_0.mp4"
+  },
+  "water-filtration-bottle-filling": {
+    "clip_id": "clip_x5opbmgbphfta",
+    "start": 80,
+    "score": 8,
+    "tile": "tiles/clip_x5opbmgbphfta_80.mp4"
+  },
+  "zip-tape-bartacking": {
+    "clip_id": "clip_adydqzefk6gai",
+    "start": 16,
+    "score": 8,
+    "tile": "tiles/clip_adydqzefk6gai_16.mp4"
+  }
+}
