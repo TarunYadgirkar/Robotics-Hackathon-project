@@ -35,11 +35,11 @@ export default function Headline({ corpus, stats, order }: Props) {
     <div className="h-full overflow-auto px-6 py-6">
       <div className="mx-auto max-w-5xl">
         <p className="text-xs uppercase tracking-widest text-dim">The finding</p>
-        <h2 className="mt-2 text-3xl leading-tight font-semibold tracking-tight">
+        <h2 className="mt-2 text-3xl leading-tight font-semibold tracking-tight lg:text-4xl">
           Only <span className="num text-accent">{pct(totals[BIMANUAL] / grand)}</span> of{' '}
           {hours(grand)} of factory work is two-handed manipulation.
         </h2>
-        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-dim">
+        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-dim lg:text-base">
           The rest is one-handed handling ({pct(totals[2] / grand)}), transit between objects
           ({pct(totals[1] / grand)}), and stretches with no hands in frame ({pct(totals[0] / grand)})
           — walking, waiting, watching a machine run. Train an imitation policy on raw clips and
@@ -59,27 +59,28 @@ export default function Headline({ corpus, stats, order }: Props) {
             ['Least hands-on', bottom ? pct(bottom.st.bimanual) : '—'],
           ].map(([k, v]) => (
             <div key={k} className="rounded border border-line bg-panel px-3 py-2">
-              <div className="num text-xl text-accent">{v}</div>
-              <div className="text-[11px] text-dim">{k}</div>
+              <div className="num text-2xl text-accent">{v}</div>
+              <div className="text-xs text-dim">{k}</div>
             </div>
           ))}
         </div>
         {top && bottom && (
-          <p className="mt-2 text-[11px] text-dim">
+          <p className="mt-2 text-xs text-dim">
             Most hands-on: {top.task.name}. Least: {bottom.task.name}. The ordering, not the
             absolute number, is the claim — drag the motion threshold and watch it hold.
           </p>
         )}
 
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
         {corpus.validation && (
-          <div className="mt-4 flex flex-wrap items-center gap-4 rounded border border-line bg-panel px-4 py-3">
+          <div className="flex flex-wrap items-center gap-4 rounded border border-line bg-panel px-4 py-3">
             <div>
               <div className="num text-xl text-accent">
                 {Math.round((corpus.validation.agreed / corpus.validation.samples) * 100)}%
               </div>
-              <div className="text-[11px] text-dim">checked by eye</div>
+              <div className="text-xs text-dim">checked by eye</div>
             </div>
-            <p className="max-w-2xl text-[11px] leading-relaxed text-dim">
+            <p className="max-w-2xl text-xs leading-relaxed text-dim">
               {corpus.validation.samples} random seconds from {corpus.validation.tasks} tasks,
               each rendered as the two frames of that second and judged against the state the
               index assigned: {corpus.validation.agreed} agreed. Of the{' '}
@@ -92,10 +93,10 @@ export default function Headline({ corpus, stats, order }: Props) {
           </div>
         )}
 
-        <div className="mt-4 flex flex-wrap items-center gap-4 rounded border border-line bg-panel px-4 py-3">
+        <div className="flex flex-wrap items-center gap-4 rounded border border-line bg-panel px-4 py-3">
           <div>
             <div className="num text-xl text-accent">ρ ≥ {stab.bandFloor.toFixed(2)}</div>
-            <div className="text-[11px] text-dim">
+            <div className="num text-xs text-dim">
               over {stab.band[0].toFixed(2)}–{stab.band[1].toFixed(2)}
             </div>
           </div>
@@ -108,7 +109,7 @@ export default function Headline({ corpus, stats, order }: Props) {
                 .join(' ')}
             />
           </svg>
-          <p className="max-w-md text-[11px] leading-relaxed text-dim">
+          <p className="max-w-md text-xs leading-relaxed text-dim">
             Across the threshold band {stab.band[0].toFixed(2)}–{stab.band[1].toFixed(2)} the
             rank ordering of tasks holds at Spearman ρ ≥ {stab.bandFloor.toFixed(2)} against the
             default: absolute percentages move a lot, who is near the top barely does. Below
@@ -117,21 +118,23 @@ export default function Headline({ corpus, stats, order }: Props) {
             the labelling is degenerate rather than merely stricter. The ordering is what we
             defend, and only inside that band.
           </p>
+          </div>
         </div>
 
         {failed.length > 0 && (
-          <div className="mt-4 rounded border border-red-900/60 bg-red-950/20 px-4 py-3 text-xs">
-            <span className="font-semibold text-red-300">
-              {failed.length} task{failed.length > 1 ? 's' : ''} excluded: the tracker fails there,
-              so the index has nothing to say about them.
-            </span>{' '}
-            <span className="text-dim">
+          <details className="mt-4 rounded border border-red-900/60 bg-red-950/20 px-4 py-3 text-xs">
+            <summary className="cursor-pointer font-semibold text-red-300">
+              {failed.length} task{failed.length > 1 ? 's' : ''} excluded: the tracker fails
+              there, so the index has nothing to say about them.
+            </summary>
+            <p className="mt-2 text-dim">
               {failed.map((r) => `${r.task.name} (${pct(r.task.det1)} detection)`).join(', ')}.
-              Gloves are the usual cause — MediaPipe's hand model does not fire on a blue nitrile
-              glove. Counting those seconds as "hands absent" would have made idle-looking tasks
-              out of busy ones, so they are held out of every number above.
-            </span>
-          </div>
+              Three causes, each checked against footage rather than guessed: gloves, hands
+              caked in wet plaster, and occlusion by the machine or workpiece. Counting those
+              seconds as "hands absent" would have made idle-looking tasks out of busy ones, so
+              they are held out of every number above. The Limitations tab shows the frames.
+            </p>
+          </details>
         )}
 
         <table className="mt-6 w-full text-xs">
@@ -181,7 +184,7 @@ export default function Headline({ corpus, stats, order }: Props) {
             })}
           </tbody>
         </table>
-        <p className="mt-3 text-[11px] leading-relaxed text-dim">
+        <p className="mt-3 text-xs leading-relaxed text-dim">
           Detection is the share of sampled frames where at least one hand was found. Sources counts
           independent recording families; where it is 1, the number describes that recording, not
           the task in general.

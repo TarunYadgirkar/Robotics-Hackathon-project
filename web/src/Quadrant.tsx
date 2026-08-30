@@ -1,6 +1,6 @@
 import { measurable, pct, type Corpus, type TaskStats } from './data'
 
-const W = 720, H = 260, PAD = 40
+const W = 720, H = 272, PAD = 42
 
 /** Two-handed share against left/right speed asymmetry: which robot the job needs. */
 export default function Quadrant({
@@ -38,6 +38,17 @@ export default function Quadrant({
         {[0.25, 0.5, 0.75].map((g) => (
           <line key={g} x1={x(g)} y1={PAD} x2={x(g)} y2={H - PAD} stroke="#171a20" />
         ))}
+        {[0, 0.25, 0.5, 0.75, 1].map((g) => (
+          <text key={g} x={x(g)} y={H - PAD + 13} fill="#6b7280" fontSize={9} textAnchor="middle">
+            {g * 100}%
+          </text>
+        ))}
+        <text x={PAD - 6} y={y(maxA) + 3} fill="#6b7280" fontSize={9} textAnchor="end">
+          {maxA.toFixed(2)}
+        </text>
+        <text x={PAD - 6} y={y(minA) + 3} fill="#6b7280" fontSize={9} textAnchor="end">
+          {minA.toFixed(2)}
+        </text>
         {pts.map(({ t, st }) => (
           <g key={t.id} className="cursor-pointer" onClick={() => onPick(t.id)}>
             <circle
@@ -74,7 +85,7 @@ export default function Quadrant({
               </text>
             ))
         })()}
-        <text x={W - PAD} y={H - PAD + 16} fill="#6b7280" fontSize={10} textAnchor="end">
+        <text x={W - PAD} y={H - PAD + 26} fill="#6b7280" fontSize={10} textAnchor="end">
           two-handed share →
         </text>
         <text x={PAD - 6} y={PAD - 8} fill="#6b7280" fontSize={10}>
