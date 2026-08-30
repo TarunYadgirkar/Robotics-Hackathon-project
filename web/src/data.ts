@@ -24,6 +24,7 @@ export interface Corpus {
   config: Config; clips: Clip[]; tasks: Task[]
   counts: Uint8Array; speeds: Uint8Array; heat: Uint16Array
   clipIndex: Map<string, number>; byTask: Map<string, number[]>
+  narration: Record<string, { text: string; audio: string }>
 }
 
 export const MEDIA_BASE = (
@@ -34,10 +35,11 @@ export const media = (p: string) => `${MEDIA_BASE}/${p}`
 
 export async function loadCorpus(): Promise<Corpus> {
   const base = import.meta.env.BASE_URL
-  const [meta, statesBuf, heatBuf] = await Promise.all([
+  const [meta, statesBuf, heatBuf, narration] = await Promise.all([
     fetch(`${base}data/corpus.json`).then((r) => r.json()),
     fetch(`${base}data/states.bin`).then((r) => r.arrayBuffer()),
     fetch(`${base}data/heatmaps.bin`).then((r) => r.arrayBuffer()),
+    fetch(`${base}data/narration.json`).then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
   ])
   const S = meta.config.clip_seconds
   const raw = new Uint8Array(statesBuf)
@@ -57,7 +59,7 @@ export async function loadCorpus(): Promise<Corpus> {
     byTask.set(c.task, list)
   })
   return {
-    ...meta, counts, speeds, heat: new Uint16Array(heatBuf), clipIndex, byTask,
+    ...meta, counts, speeds, heat: new Uint16Array(heatBuf), clipIndex, byTask, narration,
   }
 }
 
@@ -136,6 +138,10 @@ export function taskStats(c: Corpus, vHi: number): Map<string, TaskStats> {
   }
   return out
 }
+
+/** Below this detection rate the tracker, not the worker, is the story. */
+export const DETECTION_FLOOR = 0.5
+export const measurable = (t: Task) => t.det1 >= DETECTION_FLOOR
 
 export const pct = (x: number) => `${(x * 100).toFixed(1)}%`
 export const clock = (s: number) =>

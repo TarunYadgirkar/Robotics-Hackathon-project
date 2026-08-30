@@ -9,6 +9,7 @@ export default function Player({ corpus, clipIdx, second, vHi }: Props) {
   const states = clipStates(corpus, clipIdx, vHi)
   const state = states[second]
   const task = corpus.tasks.find((t) => t.id === clip.task)
+  const narration = corpus.narration?.[clip.id]
 
   useEffect(() => {
     const v = video.current
@@ -58,6 +59,21 @@ export default function Player({ corpus, clipIdx, second, vHi }: Props) {
         Camera {clip.cam.slice(4, 10)} · repetition {clip.rep.slice(4, 10)} · clip{' '}
         {clip.idx + 1} of {task?.clips}
       </p>
+      {narration && (
+        <details className="rounded border border-line bg-ink p-2 text-[11px]">
+          <summary className="cursor-pointer text-accent">Hear the index read this clip</summary>
+          <audio
+            controls
+            src={`${import.meta.env.BASE_URL}${narration.audio}`}
+            className="mt-2 w-full"
+          />
+          <p className="mt-2 leading-relaxed text-dim">{narration.text}</p>
+          <p className="mt-1 text-[10px] text-dim">
+            Synthesised speech over computed statistics. The script is generated from the
+            per-second timeline above — no model watched this video to describe it.
+          </p>
+        </details>
+      )}
     </div>
   )
 }

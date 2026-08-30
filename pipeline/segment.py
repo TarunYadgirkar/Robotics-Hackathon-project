@@ -128,7 +128,9 @@ def main():
         gyro = np.concatenate(a["gyro"]) if a["gyro"] else np.array([np.nan])
         lean = np.concatenate(a["lean"]) if a["lean"] else np.array([np.nan])
         meta = tasks.get(tid, {})
-        hist, _ = np.histogram(np.clip(ap, 0, 1.2), bins=APERTURE_BINS, range=(0, 1.2))
+        # Drop rather than pile up out-of-range apertures: a value above 1.2 means a
+        # foreshortened hand, not a wide grasp, and it would fake a spike in the top bin.
+        hist, _ = np.histogram(ap[ap <= 1.2], bins=APERTURE_BINS, range=(0, 1.2))
         h = a["heat"]
         heat.append((h / max(h.max(), 1) * 65535).astype(np.uint16).tobytes())
         task_rows.append({

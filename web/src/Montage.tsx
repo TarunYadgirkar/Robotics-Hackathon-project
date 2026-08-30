@@ -1,11 +1,13 @@
 import { useMemo } from 'react'
-import { BIMANUAL, clipStates, media, type Corpus } from './data'
+import { BIMANUAL, clipStates, measurable, media, type Corpus } from './data'
 
 /** One tile per task: the 8-second proxy whose window the index scores most two-handed. */
 export default function Montage({ corpus, vHi }: { corpus: Corpus; vHi: number }) {
   const tiles = useMemo(() => {
     const picks: { clipIdx: number; score: number; task: string }[] = []
     for (const [tid, idxs] of corpus.byTask) {
+      const task = corpus.tasks.find((t) => t.id === tid)
+      if (!task || !measurable(task)) continue
       let best: { clipIdx: number; score: number; task: string } | null = null
       for (const i of idxs) {
         const clip = corpus.clips[i]
@@ -27,10 +29,11 @@ export default function Montage({ corpus, vHi }: { corpus: Corpus; vHi: number }
   return (
     <div className="h-full overflow-auto p-4">
       <p className="mb-3 max-w-3xl text-xs text-dim">
-        Twenty-five tasks, twenty-five moments, chosen by the index alone: for each task, the
-        8-second proxy whose window scores most two-handed. Nobody watched these before they
-        were picked. <span className="num text-fg">{perfect}</span> of {tiles.length} score a
-        full 8 out of 8 seconds.
+        <span className="num text-fg">{tiles.length}</span> tasks, {tiles.length} moments,
+        chosen by the index alone: for each task, the 8-second proxy whose window scores most
+        two-handed. Nobody watched these before they were picked.{' '}
+        <span className="num text-fg">{perfect}</span> of {tiles.length} score a full 8 out of 8
+        seconds — check them yourself, that is the point of showing them.
       </p>
       <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
         {tiles.map((t) => {

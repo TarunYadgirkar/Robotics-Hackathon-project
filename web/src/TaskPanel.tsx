@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { pct, type Corpus, type Task, type TaskStats } from './data'
+import { measurable, pct, type Corpus, type Task, type TaskStats } from './data'
 
 function Heatmap({ corpus, index, task }: { corpus: Corpus; index: number; task: Task }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -66,8 +66,16 @@ export default function TaskPanel({ corpus, stats, order }: Props) {
             <div key={tid} className="rounded border border-line bg-panel p-3">
               <div className="mb-2 flex items-baseline justify-between gap-2">
                 <h3 className="truncate text-sm font-medium">{task.name}</h3>
-                <span className="num text-sm text-accent">{pct(st.bimanual)}</span>
+                <span className="num text-sm text-accent">
+                  {measurable(task) ? pct(st.bimanual) : '—'}
+                </span>
               </div>
+              {!measurable(task) && (
+                <p className="mb-2 rounded bg-red-950/40 px-2 py-1 text-[10px] leading-tight text-red-300">
+                  Not measurable: hands detected in only {pct(task.det1)} of frames. Every
+                  number on this card is unreliable.
+                </p>
+              )}
               <Heatmap corpus={corpus} index={index} task={task} />
               <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
                 {[

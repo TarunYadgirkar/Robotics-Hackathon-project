@@ -1,10 +1,11 @@
-import { pct, type Corpus } from './data'
+import { measurable, pct, type Corpus } from './data'
 
 interface Props { corpus: Corpus; vHi: number }
 
 export default function Limitations({ corpus, vHi }: Props) {
   const single = corpus.tasks.filter((t) => t.reps === 1)
   const weak = corpus.tasks.filter((t) => t.det1 < 0.7).sort((a, b) => a.det1 - b.det1)
+  const failed = corpus.tasks.filter((t) => !measurable(t))
   const noPreview = corpus.clips.filter((c) => !c.preview).length
 
   const items: [string, React.ReactNode][] = [
@@ -14,10 +15,27 @@ export default function Limitations({ corpus, vHi }: Props) {
       fast alternating work reads as one continuous state.
     </>],
     ['"Hands absent" is not proof the hands were gone', <>
-      It means the tracker found nothing. Detection degrades on motion blur, occlusion by
-      the workpiece, gloves, and hands leaving the bottom of the frame. Detection rate is
-      printed next to every number for this reason.{' '}
-      {weak.length > 0 && <>Weakest: {weak.slice(0, 4).map((t) => `${t.name} (${pct(t.det1)})`).join(', ')}.</>}
+      It means the tracker found nothing. Detection degrades on motion blur, occlusion by the
+      workpiece, and hands leaving the bottom of the frame — but the failure that actually bit
+      us was gloves. The bottle-cleaning worker wears blue nitrile gloves and MediaPipe's hand
+      model barely fires on them: detection runs at{' '}
+      <span className="num text-fg">
+        {pct(corpus.tasks.find((t) => t.id === 'bottle-cleaning')?.det1 ?? 0)}
+      </span>{' '}
+      across all nine of its clips. Read naively, that task looks like a worker doing nothing
+      for 45 minutes. It is a busy sink. Any task under{' '}
+      {pct(0.5)} detection is therefore held out of every headline number rather than being
+      quietly averaged in.{' '}
+      {failed.length > 0 && <>Currently held out: {failed.map((t) => t.name).join(', ')}.</>}{' '}
+      {weak.length > 0 && <>Weakest measured: {weak.filter(measurable).slice(0, 3).map((t) => `${t.name} (${pct(t.det1)})`).join(', ')}.</>}
+      <img
+        src={`${import.meta.env.BASE_URL}evidence/gloved-hands-detection-failure.jpg`}
+        alt="Frame from bottle-cleaning: a worker in blue nitrile gloves scrubbing at a sink, hands clearly visible but undetected"
+        className="mt-3 w-full max-w-md rounded border border-line"
+      />
+      <span className="mt-1 block text-[11px]">
+        Both hands are plainly in frame here. The tracker found neither.
+      </span>
     </>],
     ['One threshold, chosen from the data, not fitted per task', <>
       The motion threshold defaults to the 75th percentile of hand speed pooled across the
