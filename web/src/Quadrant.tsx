@@ -48,18 +48,32 @@ export default function Quadrant({
             <title>{`${t.name} — ${pct(st.bimanual)} two-handed, asymmetry ${t.asymmetry.toFixed(2)}`}</title>
           </g>
         ))}
-        {pts
-          .filter((p) => p.st.bimanual > 0.6 || p.t.asymmetry > hi - span * 0.2 || p.st.bimanual < 0.15)
-          .slice(0, 8)
-          .map(({ t, st }) => (
-            <text
-              key={t.id}
-              x={x(st.bimanual) + 8} y={y(t.asymmetry) + 3}
-              fill="#9aa1ad" fontSize={9}
-            >
-              {t.name}
-            </text>
-          ))}
+        {(() => {
+          // Label the extremes, skipping any that would collide with one already placed.
+          const placed: [number, number][] = []
+          return pts
+            .slice()
+            .sort((a, b) => b.st.bimanual - a.st.bimanual)
+            .filter((p) => p.st.bimanual > 0.6 || p.t.asymmetry > hi - span * 0.15 || p.st.bimanual < 0.15)
+            .filter((p) => {
+              const cx = x(p.st.bimanual), cy = y(p.t.asymmetry)
+              if (placed.some(([px, py]) => Math.abs(px - cx) < 90 && Math.abs(py - cy) < 12)) {
+                return false
+              }
+              placed.push([cx, cy])
+              return true
+            })
+            .slice(0, 7)
+            .map(({ t, st }) => (
+              <text
+                key={t.id}
+                x={x(st.bimanual) + 8} y={y(t.asymmetry) + 3}
+                fill="#9aa1ad" fontSize={9}
+              >
+                {t.name}
+              </text>
+            ))
+        })()}
         <text x={W - PAD} y={H - PAD + 16} fill="#6b7280" fontSize={10} textAnchor="end">
           two-handed share →
         </text>

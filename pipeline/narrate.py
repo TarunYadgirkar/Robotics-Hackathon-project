@@ -27,9 +27,13 @@ MIN_RUN = 4  # seconds; shorter runs are noise at 2 fps
 
 
 def spoken_time(s):
+    if s == 0:
+        return "at the start"
     if s < 60:
-        return f"{s} seconds in"
-    return f"{s // 60} minute{'s' if s // 60 > 1 else ''} {s % 60} seconds in"
+        return f"{s} second{'s' if s != 1 else ''} in"
+    m, r = s // 60, s % 60
+    mins = f"{m} minute{'s' if m > 1 else ''}"
+    return f"{mins} in" if r == 0 else f"{mins} {r} second{'s' if r != 1 else ''} in"
 
 
 def script_for(clip, task, states, window=90):
