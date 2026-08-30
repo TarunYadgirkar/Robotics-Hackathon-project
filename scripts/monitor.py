@@ -1,17 +1,23 @@
 """Print live joint feedback. Commands zero gain and zero torque, so the arm stays limp.
 
-Usage: python scripts/monitor.py [seconds]
+  python scripts/monitor.py            # 10 seconds
+  python scripts/monitor.py 30
 """
 
+import argparse
 import math
-import sys
 import time
 
 from yam.arm import ARM_JOINTS, GRIPPER_JOINT, connected_arm
 
 
 def main() -> None:
-    duration = float(sys.argv[1]) if len(sys.argv) > 1 else 10.0
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("duration", type=float, nargs="?", default=10.0, help="seconds to read for")
+    parser.add_argument("--interval", type=float, default=0.25, help="seconds between samples")
+    args = parser.parse_args()
+
+    duration = args.duration
     joints = ARM_JOINTS + [GRIPPER_JOINT]
 
     with connected_arm(joints=joints) as arm:
@@ -27,7 +33,7 @@ def main() -> None:
             state = arm.read_state()
             degrees = "  ".join(f"{math.degrees(p):>9.2f}" for p in state.positions)
             print(f"{time.time() - start:>6.1f}  {degrees}", flush=True)
-            time.sleep(0.25)
+            time.sleep(args.interval)
 
         print("\nfinal state:")
         print(arm.read_state().describe())
