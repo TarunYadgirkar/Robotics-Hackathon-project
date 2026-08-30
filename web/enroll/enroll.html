@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>YAM Enrollment</title>
 <style>
   :root{
@@ -20,7 +20,10 @@
   body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden;
        -webkit-font-smoothing:antialiased}
   canvas{display:block}
-  #scene{position:fixed;inset:0}
+  /* touch-action:none is what stops Safari claiming the gesture as page zoom;
+     without it a pinch minimises the tab instead of reaching the canvas. */
+  #scene{position:fixed;inset:0;touch-action:none}
+  html,body{touch-action:none;overscroll-behavior:none}
 
   header{position:fixed;top:0;left:0;right:0;padding:28px 32px;pointer-events:none;
          display:flex;justify-content:space-between;align-items:flex-start;gap:24px}
@@ -63,6 +66,19 @@
       padding:2px 5px;margin-left:8px}
   button.primary kbd{background:rgba(255,255,255,.22);color:#fff}
 
+  @media (max-width: 760px){
+    header{padding:16px 16px 0;flex-direction:column;gap:10px}
+    h1{font-size:20px}
+    .prompt{font-size:13px;max-width:none}
+    .readout{display:none}          /* six joint angles are not worth a phone screen */
+    footer{padding:12px 12px 18px;gap:10px}
+    .controls{flex-wrap:wrap;justify-content:center;gap:8px}
+    button,.upload{padding:11px 16px;font-size:13px}
+    kbd{display:none}
+    .stats{flex-wrap:wrap;justify-content:center;gap:6px 14px;font-size:10px}
+    #toast{bottom:150px}
+  }
+
   .badge{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);
          background:var(--panel);border-radius:999px;padding:6px 13px;
          box-shadow:0 1px 2px rgba(23,18,20,.05),0 6px 18px rgba(23,18,20,.06)}
@@ -100,11 +116,13 @@
     <span>coverage <b id="statCoverage">0%</b></span>
     <span>tip <b id="statTip">—</b></span>
     <span>poses logged <b id="statPoses">0</b></span>
+    <span>scan <b id="statScan">none</b></span>
   </div>
   <div class="controls">
     <button id="btnUndo">Undo<kbd>U</kbd></button>
     <button class="primary" id="btnCapture">Capture point<kbd>SPACE</kbd></button>
     <button id="btnNext">Next object<kbd>N</kbd></button>
+    <button id="btnRecenter">Recenter<kbd>R</kbd></button>
     <button id="btnDone">Finish<kbd>F</kbd></button>
     <label class="upload" for="scanFile">Upload scan</label>
     <input id="scanFile" type="file" accept=".ply,.obj,.stl" hidden>
@@ -309,30 +327,103 @@ world.add(tipMarker);
 
 /* ------------------------------------------------------- orbit camera ---- */
 /* Hand-rolled: cdnjs serves three.min.js but not the examples bundle, and one
-   more network dependency is one more way for this to break at demo time. */
+   more network dependency is one more way for this to break at demo time.
+   Pointer events cover mouse and touch together; the multi-touch bookkeeping is
+   what makes pinch-zoom and two-finger pan work on a phone. */
 let yaw = 0.9, pitch = 0.30, distance = 1.30;
 const target = new THREE.Vector3(0, 0.30, 0);   // scene is Y-up; robot Z maps to scene Y
-let dragging = false, lastX = 0, lastY = 0;
+const HOME_VIEW = {yaw: 0.9, pitch: 0.30, distance: 1.30, target: [0, 0.30, 0]};
 
-canvas.addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
-addEventListener('pointerup', () => dragging = false);
-addEventListener('pointermove', e => {
-  if (!dragging) return;
-  yaw -= (e.clientX - lastX) * 0.006;
-  pitch = Math.max(-1.35, Math.min(1.45, pitch - (e.clientY - lastY) * 0.006));
-  lastX = e.clientX; lastY = e.clientY;
+const pointers = new Map();
+let pinchDistance = 0, pinchMidpoint = null;
+
+function pointerList(){ return [...pointers.values()]; }
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  if (pointers.size === 2){
+    const [a, b] = pointerList();
+    pinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+    pinchMidpoint = {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2};
+  }
 });
+
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2){ pinchDistance = 0; pinchMidpoint = null; }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', endPointer);
+
+canvas.addEventListener('pointermove', e => {
+  const previous = pointers.get(e.pointerId);
+  if (!previous) return;
+  e.preventDefault();
+  const current = {x: e.clientX, y: e.clientY};
+
+  if (pointers.size === 1){
+    yaw -= (current.x - previous.x) * 0.006;
+    pitch = Math.max(-1.35, Math.min(1.45, pitch - (current.y - previous.y) * 0.006));
+  }
+  pointers.set(e.pointerId, current);
+
+  if (pointers.size === 2){
+    const [a, b] = pointerList();
+    const spread = Math.hypot(a.x - b.x, a.y - b.y);
+    const midpoint = {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2};
+
+    if (pinchDistance > 0 && spread > 0){
+      distance = clampDistance(distance * (pinchDistance / spread));
+    }
+    if (pinchMidpoint){
+      // Two-finger drag pans the look-at point, in the camera's own plane.
+      panBy((midpoint.x - pinchMidpoint.x), (midpoint.y - pinchMidpoint.y));
+    }
+    pinchDistance = spread;
+    pinchMidpoint = midpoint;
+  }
+}, {passive: false});
+
+function clampDistance(value){ return Math.max(0.35, Math.min(4.0, value)); }
+
+function panBy(dx, dy){
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+  const scale = distance * 0.0016;
+  target.addScaledVector(right, -dx * scale);
+  target.addScaledVector(up, dy * scale);
+}
+
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  distance = Math.max(0.5, Math.min(3.2, distance * (1 + Math.sign(e.deltaY) * 0.08)));
+  distance = clampDistance(distance * (1 + Math.sign(e.deltaY) * 0.08));
 }, {passive:false});
+
+function resetView(){
+  yaw = HOME_VIEW.yaw;
+  pitch = HOME_VIEW.pitch;
+  distance = HOME_VIEW.distance * framingForAspect();
+  target.set(...HOME_VIEW.target);
+}
+
+/* A phone in portrait sees far less width, so the same camera distance puts the
+   arm off the sides. Pull back in proportion to how narrow the viewport is. */
+function framingForAspect(){
+  const aspect = innerWidth / innerHeight;
+  return aspect >= 1 ? 1 : Math.min(1.9, 1 / Math.max(aspect, 0.45));
+}
 
 function resize(){
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 }
-addEventListener('resize', resize); resize();
+addEventListener('resize', resize);
+addEventListener('orientationchange', () => setTimeout(() => { resize(); resetView(); }, 250));
+resize();
+distance = HOME_VIEW.distance * framingForAspect();
 
 /* ---------------------------------------------------------------- state --- */
 let lastSeen = 0, lastPointCount = 0;
@@ -360,6 +451,8 @@ function render(state){
   el('statPatches').textContent = covered;
   el('statCoverage').textContent = Math.round((state.progress || 0) * 100) + '%';
   el('statPoses').textContent = state.pose_samples ?? 0;
+  const scans = state.scans || [];
+  el('statScan').textContent = scans.length ? scans[scans.length - 1] : 'none';
   el('meterFill').style.width = Math.round((state.progress || 0) * 100) + '%';
 
   if (state.tip){
@@ -427,6 +520,7 @@ el('btnCapture').onclick = () => send('capture');
 el('btnUndo').onclick    = () => send('undo');
 el('btnNext').onclick    = () => send('next');
 el('btnDone').onclick    = () => send('done');
+el('btnRecenter').onclick = () => { resetView(); toast('view reset'); };
 el('scanFile').addEventListener('change', async event => {
   const file = event.target.files[0];
   if (!file) return;
@@ -444,6 +538,7 @@ addEventListener('keydown', e => {
   else if (k === 'u') send('undo');
   else if (k === 'n') send('next');
   else if (k === 'f') send('done');
+  else if (k === 'r'){ resetView(); toast('view reset'); }
 });
 
 function tick(now){

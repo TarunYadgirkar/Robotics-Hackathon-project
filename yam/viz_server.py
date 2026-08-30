@@ -33,6 +33,7 @@ class VizServer:
         self.upload_dir = upload_dir or os.getcwd()
         self.static_payloads: Dict[str, Any] = {}
         self.uploads: list = []
+        self.scan_summary: Optional[Dict[str, Any]] = None
         #: Guards the API once the server is reachable beyond this machine. The
         #: page is served freely so it can load and read the token out of its own
         #: URL; the endpoints that capture points and write files are not.
@@ -167,7 +168,21 @@ class VizServer:
 
                 server.uploads.append(destination)
                 server.commands.put("scan_uploaded")
-                self._send_json({"saved": destination, "bytes": length - remaining})
+
+                summary = {"saved": destination, "bytes": length - remaining}
+                try:
+                    from yam.lidar import load_point_cloud
+
+                    points = load_point_cloud(destination)
+                    summary["points"] = int(len(points))
+                    summary["extent_m"] = [round(float(v), 3) for v in (points.max(axis=0) - points.min(axis=0))]
+                    server.scan_summary = summary
+                except Exception as error:
+                    # A scan we cannot parse is worth reporting, not worth failing
+                    # the upload over -- the file is on disk either way.
+                    summary["parse_error"] = str(error)
+                    server.scan_summary = summary
+                self._send_json(summary)
 
         self._server = ThreadingHTTPServer((self.host, self.port), Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
