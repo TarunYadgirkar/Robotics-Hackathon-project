@@ -2,34 +2,30 @@
 
 ## Ongoing
 
-Updated: 2026-08-30T17:20:00-07:00 by claude session
+Updated: 2026-08-30T23:59:00-07:00 by claude session
 
 Branch: `idk-demo` (off `hands-index`; `main` is Boris's YAM/scan work — never merge main in, cherry-pick `yam/` + `scripts/` via `git checkout origin/main -- yam/ scripts/`).
 
-Done (all pushed to origin/idk-demo, latest `c93c1a8`):
-- Full "I Don't Know How To Do That Yet" demo per PLAN_v2 (in ~/Downloads), heavily evolved by user direction. Dataset = LOCAL copy at `~/TarunsCode/wc-hack` (WC23 volume not mounted; set `WC_VIDEOS=$HOME/TarunsCode/wc-hack`). All 424 parquets pre-extracted.
-- `brain/decide.py` — content-word coverage matcher (act/ask/abstain), majority-vs-outlier ask tier (sil>=0.1, deconfounded); no task reaches p<=0.05 — that's a corpus property, disclosed. `brain/test_decide.py` green.
-- `variance/` — DTW + permutation + double confound check over 50 tasks (`dd19e39`-era).
-- `listen/transcribe.py` (mlx-whisper, `--seconds N` timed capture — push-to-talk is dead, it was invisible under captured stdout), `voice/speak.py` (ElevenLabs voice "Eric" `cjVigY5qzO86Huf0OWal`, `say` fallback, templates incl. abstain_howto/attempt_result/ask_hold/abstain_restate), `voice/evidence.py` panels.
-- REAL YAM ARM WORKING: `arm/` hardware backend over Boris's `yam.arm.YamArm` (Damiao/CANable2 gs_usb VID 0x1D50 PID 0x606F). Gestures live-verified full range on j2–j6: wake(20s), attention, decline, point_screen, attempt, task_demo, approach_can, can_grip_top, can_grip_bottom. **joint1 HARD-LOCKED ±2° in validate_hardware_motion (physical clamps at base sides — user constraint, overrides collision checker).** Official i2rt yam_pro URDF+MJCF in `hwresearch/` (symlinked to `~/TarunsCode/hackathons/i2rt/i2rt/` where Boris's code expects); mujoco ArmSafetyChecker runs automatically on every setpoint stream. Jaw force lowered to 0.25Nm (~17N) so a can can't be crushed. Auto-recovery: one-shot reconnect on CAN failure, `ArmUnavailable` raised fast otherwise; demo survives arm death (`[ARM OFFLINE]`, keeps talking). Keepalive (`hwsupport/keepalive.py`) prevents the 0xD comms-lost latch between beats. `hwsupport/triage.py --symptom` = 26 failure modes mined from Boris's code.
-- `demo/run_demo.py` — golden path: wake gesture → converse mode ("fold a piece of paper" → abstain+"How do I do it?" → spoken instruction → attempt gesture → honest close; "put this can upside down" → 0.0 coverage → approach_can → asks top/bottom → keyword-matched answer picks can_grip_top/bottom). LLM phrasing live (anthropic SDK 1.2.0, claude-haiku-4-5-20251001, ~1.4s; ANTHROPIC_API_KEY in .env works, no workspace header needed). LLM only words the computed decision JSON; motion is dispatched from computed tier/keywords, never LLM output. `--scripted` = judge-sanctioned deterministic backup (pre-synth mp3s in `demo/audio_cache/`, real decision snapshots, real gestures). `--rehearse` (sim), `--text-mode`, `--timeout`, `t` toggle.
-- `talk.py` (repo root) — standalone voice conversation loop, no arm.
-- `feedback/ingest.py` — live webcam ingest reusing pipeline/extract.py; `CAMERA_INDEX` env selects device.
-- BUILD_CARD.md "Arm demo addendum" — current through real-hardware + LLM disclosure.
+Done (all pushed to origin/idk-demo, latest `81277f4`):
+- Everything from the pre-flip build (through `c93c1a8`): golden path + converse + can beat + `--scripted` backup, real YAM arm over Boris's yam.arm (joint1 HARD-LOCKED ±2°, jaw torque 0.25Nm/~17N, mujoco safety checks on every stream, keepalive, triage). LLM (claude-haiku-4-5) words computed decisions only; keywords dispatch all motion. Dataset local at `~/TarunsCode/wc-hack` (`WC_VIDEOS` override).
+- **FLIP BEAT (`81277f4`), user-directed new flow**: `demo/run_demo.py --flip`, or in converse via "pick/grab/lift/hold/take ... can" (PICKUP_WORDS routes to `flip_beat` before `can_beat`). Sequence: `can_pickup` gesture (REAL grip, unlike can_grip_top's pantomime — jaws close to 84% absolute = 63.8mm < 66mm can, stall at 17N; 2.5s hover pause for the operator to center the can; ends HOLDING the can lifted, keepalive maintains grip through the conversation) → listen, expect "flip" (FLIP_WORDS) → decide("flip") = honest abstain, spoken via abstain_howto ("None of them is flip... How do I do it?") → listen, expect "hold it at the top" (RELEASE_TOP keywords; NEGATIVE without "top" aborts and keeps holding) → `can_fling` (dip in j4, rise j3+26/j4+27 at ~23 deg/s, jaws open 84→88% in the last 0.35s of the rise at 11.4%/s — **hardware gripper cap is 12%/s**, opening more would stretch the segment and kill the fling; finish to 98% at apex; ends AT ITS OWN START POSE) → attempt_result close. Can not landing = expected + disclosed.
+- Both gestures LIVE-VERIFIED on the real arm (pickup + 8s keepalive hold + fling ran clean; the retimed 88%-release segment verified in the real motion pipeline via ARM_FORCE_SIM, not yet on hardware — CANable died first, see Blocked).
+- Gesture-authoring landmines learned on hardware, recorded in the JSONs' notes: the arm SAGS a few degrees under gravity vs commanded (j2 27.6 measured vs 30 commanded, j3 to its 0.0 floor), so any relative offset that "undoes" a previous gesture underflows the j2/j3 soft floors and is REFUSED — end chained gestures at their own start pose, keep j2/j3 offsets >= 0. `arm/verify_poses.py` now verifies `can_fling` from `can_pickup`'s end pose (`follows` map). All 11 gestures PASS collision verification.
+- Killed a stale `run_demo.py` that was holding the CAN bus (that's what a "CanOperationError: message could not be sent" precheck FAIL with adapter present looks like).
 
-In flight: nothing (all subagents delivered).
+In flight: code-review subagent on `81277f4` (background; fold in findings if any).
 
-Blocked / user-side only:
-- **Camera**: user's iPhone connected via Continuity (friend's phone won't work — wrong Apple ID). cv2 sees the phone from the USER'S Terminal only (agent processes are TCC-blocked). User was mid-diagnosis: capture grabbed Mac camera; next step is snapshot test per index (`/tmp/camN.jpg`) and launch with `CAMERA_INDEX=<phone index>`; phone must be locked/landscape/near, and no other app holding a camera.
-- **BACKUP VIDEO NOT RECORDED** — non-negotiable per plan; flow changed 4x since last clean pass. QuickTime steps in run_demo.py header.
-- Live run with the physical can never done (gestures verified on arm, but no can present). Place can under `approach_can` hover (~15cm out, straight ahead of the locked base).
-- Repo public + YouTube + submission form still pending (hard stop was 17:30).
+Blocked:
+- **CANable dropped off USB mid-session (count 0, did not self-recover) — needs a physical reseat/other port**, then `.venv/bin/python arm/precheck.py`. Third drop today.
+- Full live `--flip` run with a physical can never done (no can present during verification). Also the retimed release segment not yet replayed on hardware.
+- Camera (unchanged): user's iPhone via Continuity; cv2 sees it from the USER'S Terminal only (agent TCC-blocked). Snapshot test per index → `CAMERA_INDEX=N`. Only beat4 ingest needs it; the flip beat doesn't.
+- Backup video, repo public, submission — still pending from before.
 
 Next (cold-start order):
-1. `.venv/bin/python arm/precheck.py` (16s READY/NOT READY; CANable dropped off USB twice today — reseat/different port fixes it; `hwsupport/triage.py` for faults).
-2. Camera snapshot test from USER's Terminal, pick CAMERA_INDEX.
-3. Full live run: `CAMERA_INDEX=N .venv/bin/python demo/run_demo.py` (golden path; `--timeout 3` if wifi slow).
-4. Record backup video on second clean pass; `--scripted` is the stage fallback.
+1. Reseat CANable → `.venv/bin/python arm/precheck.py`.
+2. Dry hardware pass, no can: `.venv/bin/python demo/run_demo.py --flip --text-mode --no-llm --no-audio` with `yes ''` if headless.
+3. Live with the can: place it ~straight ahead of the locked base where the jaws hover (the 2.5s "center the can" pause is for exactly this), run `CAMERA_INDEX=N .venv/bin/python demo/run_demo.py --flip` from the USER'S Terminal (mic + camera TCC).
+4. Record backup video; `--scripted` remains the stage fallback (flip beat is NOT in the scripted cache).
 5. Repo public, upload, submit.
 
-Gotchas: bash-guard hook blocks ANY `.env` reference in Bash commands (read keys inside Python only); never run two processes on the CAN bus; `yes '' | ... --text-mode` drives the demo headlessly (non-tty read_key fallback exists); sim gesture counterparts have older choreography — take durations from C.json `gesture_durations_s`.
+Gotchas: bash-guard hook blocks ANY `.env` reference in Bash commands (read keys inside Python only); never run two processes on the CAN bus; `yes '' | ... --text-mode` drives the demo headlessly; sim gesture counterparts of the can flow are straight copies of the hardware relative files; hardware gripper velocity cap is 12%/s (sim 120) — author jaw moves accordingly.
