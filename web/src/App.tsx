@@ -89,13 +89,13 @@ export default function App() {
             </label>
             <button
               onClick={() => setVHi(corpus.config.v_hi)}
-              className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-fg"
+              className="rounded border border-line px-2 py-0.5 text-xs text-dim hover:text-fg"
             >
               reset
             </button>
           </div>
         </nav>
-        <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-dim">
+        <div className="mt-2 flex flex-wrap gap-4 text-xs text-dim">
           {STATE_NAMES.map((n, i) => (
             <span key={n} className="flex items-center gap-1.5">
               <span className="h-2.5 w-4 rounded-sm" style={{ background: STATE_COLORS[i] }} />
@@ -132,7 +132,7 @@ export default function App() {
             </div>
             <aside className="w-[420px] shrink-0 overflow-auto border-l border-line bg-panel p-4">
               {media === false && (
-                <p className="mb-3 rounded border border-line bg-ink p-3 text-[11px] leading-relaxed text-dim">
+                <p className="mb-3 rounded border border-line bg-ink p-3 text-xs leading-relaxed text-dim">
                   No media server at <span className="num">{MEDIA_BASE}</span>, so
                   full-resolution playback is off. The index, the task cards and the montage
                   are all bundled and work as they are. To play the source video, run the

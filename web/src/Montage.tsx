@@ -67,7 +67,7 @@ export default function Montage({ corpus, vHi }: { corpus: Corpus; vHi: number }
                 autoPlay loop muted playsInline
                 className="aspect-video w-full bg-black"
               />
-              <figcaption className="flex items-baseline justify-between gap-2 px-2 py-1 text-[11px]">
+              <figcaption className="flex items-baseline justify-between gap-2 px-2 py-1 text-xs">
                 <span className="truncate">{task?.name}</span>
                 <span className="num text-accent">
                   {t.score}/{WINDOW}

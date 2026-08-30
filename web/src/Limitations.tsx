@@ -32,7 +32,7 @@ export default function Limitations({ corpus, vHi }: Props) {
         alt="Three frames: a lathe with the operator's hands behind the machine; hands caked in wet plaster carrying a ceiling tile; hands at the far edge of a large fabric roll"
         className="mt-3 w-full rounded border border-line"
       />
-      <span className="mt-1 block text-[11px]">
+      <span className="mt-1 block text-xs">
         Left to right: occlusion, plaster-caked hands, hands at the frame edge.
       </span>
       <img
@@ -40,7 +40,7 @@ export default function Limitations({ corpus, vHi }: Props) {
         alt="Frame from bottle cleaning: a worker in blue nitrile gloves scrubbing at a sink, both hands clearly visible but undetected"
         className="mt-3 w-full max-w-md rounded border border-line"
       />
-      <span className="mt-1 block text-[11px]">
+      <span className="mt-1 block text-xs">
         Bottle cleaning, {pct(corpus.tasks.find((t) => t.id === 'bottle-cleaning')?.det1 ?? 0)}{' '}
         detection across all nine clips. Both hands are plainly in frame. The tracker found neither.
       </span>

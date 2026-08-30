@@ -77,13 +77,13 @@ export default function TaskPanel({ corpus, stats, order }: Props) {
                 </span>
               </div>
               {!measurable(task) && (
-                <p className="mb-2 rounded bg-red-950/40 px-2 py-1 text-[10px] leading-tight text-red-300">
+                <p className="mb-2 rounded bg-red-950/40 px-2 py-1 text-[11px] leading-tight text-red-300">
                   Not measurable: hands detected in only {pct(task.det1)} of frames. Every
                   number on this card is unreliable.
                 </p>
               )}
               <Heatmap corpus={corpus} index={index} task={task} />
-              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
                 {[
                   ['reach', `${((x1 - x0) * 100).toFixed(0)}×${((y1 - y0) * 100).toFixed(0)}`],
                   ['grip aperture', task.aperture[2].toFixed(2)],
@@ -111,7 +111,7 @@ export default function TaskPanel({ corpus, stats, order }: Props) {
                 })}
               </div>
               {task.reps === 1 && (
-                <p className="mt-2 text-[10px] leading-tight text-red-400/80">
+                <p className="mt-2 text-[11px] leading-tight text-red-400/80">
                   One recording family — this describes that recording, not the task.
                 </p>
               )}

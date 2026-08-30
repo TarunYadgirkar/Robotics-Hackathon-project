@@ -55,12 +55,12 @@ export default function Player({ corpus, clipIdx, second, vHi }: Props) {
           />
         ))}
       </div>
-      <p className="text-[11px] text-dim">
+      <p className="text-xs text-dim">
         Camera {clip.cam.slice(4, 10)} · repetition {clip.rep.slice(4, 10)} · clip{' '}
         {clip.idx + 1} of {task?.clips}
       </p>
       {narration && (
-        <details className="rounded border border-line bg-ink p-2 text-[11px]">
+        <details className="rounded border border-line bg-ink p-2 text-xs">
           <summary className="cursor-pointer text-accent">Hear the index read this clip</summary>
           <audio
             controls
@@ -68,7 +68,7 @@ export default function Player({ corpus, clipIdx, second, vHi }: Props) {
             className="mt-2 w-full"
           />
           <p className="mt-2 leading-relaxed text-dim">{narration.text}</p>
-          <p className="mt-1 text-[10px] text-dim">
+          <p className="mt-1 text-[11px] text-dim">
             Synthesised speech over computed statistics. The script is generated from the
             per-second timeline above — no model watched this video to describe it.
           </p>

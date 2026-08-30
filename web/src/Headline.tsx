@@ -157,7 +157,7 @@ export default function Headline({ corpus, stats, order }: Props) {
                 >
                   <td className="py-1 pr-3">
                     {task.name}
-                    {bad && <span className="ml-2 text-[10px] text-red-400">not measurable</span>}
+                    {bad && <span className="ml-2 text-[11px] text-red-400">not measurable</span>}
                   </td>
                   <td>
                     <div className="flex h-3 w-full overflow-hidden rounded-sm">

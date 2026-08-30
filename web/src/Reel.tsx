@@ -149,7 +149,7 @@ export default function Reel({ corpus, vHi, state: initial }: Props) {
           <button
             key={`${r.clip}-${r.start}`}
             onClick={() => setCursor(i)}
-            className={`flex w-full items-center gap-2 border-b border-line/60 px-3 py-1.5 text-left text-[11px] ${
+            className={`flex w-full items-center gap-2 border-b border-line/60 px-3 py-1.5 text-left text-xs ${
               i === cursor ? 'bg-line' : 'hover:bg-line/40'
             }`}
           >
