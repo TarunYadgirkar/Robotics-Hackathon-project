@@ -105,6 +105,13 @@ def main() -> None:
     try:
         with open_arm(args.simulate) as arm:
             if arm is not None:
+                # Motors latch a comms-timeout whenever something left them
+                # enabled without a command stream, and read_state() refuses to
+                # run against a latched motor. Clear that one code, report the
+                # rest, and carry on.
+                stale = arm.recover_stale_motors()
+                if stale:
+                    print(f"  cleared comms-timeout latch on: {', '.join(stale)}")
                 arm.enable()
             started = time.time()
 

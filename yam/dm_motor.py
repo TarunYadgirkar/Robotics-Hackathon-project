@@ -32,6 +32,8 @@ ERROR_MESSAGES = {
     0xE: "overload",
 }
 NORMAL_ERROR_CODE = 0x1
+#: Sat enabled without a command stream. A timeout, not damage.
+COMMUNICATION_LOST = 0xD
 
 
 @dataclass(frozen=True)

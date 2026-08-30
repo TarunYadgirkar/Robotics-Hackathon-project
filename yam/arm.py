@@ -17,6 +17,7 @@ import can
 from yam import can_compat  # noqa: F401  (patches gs_usb for macOS)
 from yam.dm_motor import (
     CLEAR_ERROR,
+    COMMUNICATION_LOST,
     DISABLE,
     ENABLE,
     FEEDBACK_ID_OFFSET,
@@ -190,6 +191,27 @@ class YamArm:
             pass
 
     # -- lifecycle ---------------------------------------------------------
+
+    def recover_stale_motors(self) -> List[str]:
+        """Clear the benign comms-timeout latch, and only that one.
+
+        0xD means a motor sat enabled without a command stream -- a timeout, not
+        damage, and it clears on request. Every other code (over-temperature,
+        overcurrent, overload) reports a physical condition, so those are left
+        latched rather than cleared out from under the operator.
+        """
+        stale = []
+        for joint in self.joints:
+            try:
+                feedback = self._exchange(joint, encode_mit_command(joint.spec, position=0.0), retries=2)
+            except MotorCommunicationError:
+                continue
+            if feedback.error_code == COMMUNICATION_LOST:
+                stale.append(joint.name)
+
+        if stale:
+            self.clear_errors()
+        return stale
 
     def enable(self) -> ArmState:
         self._drain()
