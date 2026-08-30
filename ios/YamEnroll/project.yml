@@ -7,7 +7,7 @@ options:
 
 settings:
   base:
-    DEVELOPMENT_TEAM: XY4F56L5NQ
+    DEVELOPMENT_TEAM: 3N3S6262N2   # team OU on the signing cert; the name's suffix is the cert id, not the team
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
