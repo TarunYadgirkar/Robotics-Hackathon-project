@@ -1,0 +1,184 @@
+[
+  {
+    "symptom": "Motor reports error_code 0xD (\"communication lost\") after sitting enabled with no command stream — read_state()/command_positions() raise MotorFaultError, or feedback.error_message == 'communication lost'",
+    "cause": "A DM motor's own watchdog latches 0xD when it stops receiving frames while enabled. Measured on this arm: 20Hz polling with 0.3-0.4s silent gaps latched the gripper; 100Hz with zero-torque frames through the gaps did not, across five cycles. Any code that enables motors and then waits on a human, a file, or a network without streaming frames will trigger this.",
+    "remedy": "Call arm.recover_stale_motors() (yam/arm.py) — it probes each joint, and for any reporting COMMUNICATION_LOST it calls self.clear_errors() and returns the list of stale joint names. Then re-enable with arm.enable(). scripts/enroll.py does exactly this in its main loop on every MotorCommunicationError/MotorFaultError. CLI equivalent: `.venv/bin/python scripts/diagnose.py --clear`.",
+    "source": "yam/arm.py:245-264 (recover_stale_motors); scripts/enroll.py:152-154,163-184; commit e2a752c \"Recover motors from the comms-timeout latch automatically\"",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "A motor (commonly the gripper) is stuck reporting 0xD and does NOT clear after disable()/enable() cycles",
+    "cause": "DM motors latch their error word in firmware; disable/enable does not reset it. Confirmed on hardware: a gripper stuck in 0xD survived two full disable/enable cycles.",
+    "remedy": "Send the CLEAR_ERROR command (0xFB, byte pattern [0xFF]*7+[0xFB]) via arm.clear_errors() — NOT disable/enable. clear_errors() does not itself re-enable the motor; follow with arm.enable(). If clear_errors() truly does not clear it, the code is not 0xD (it's a physical fault) and the only recovery is a power cycle.",
+    "source": "yam/dm_motor.py:18 (CLEAR_ERROR); yam/arm.py:294-310 (_clear_joint, clear_errors); commit 920c5e4 \"Add DM clear-error, calibrated gripper, and jaw-aware kinematics\"",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "arm.enable() hangs or one joint (observed: joint6) keeps re-latching 0xD every time enable() sweeps through all joints",
+    "cause": "Clearing every motor once up front does not hold because enabling is sequential: a motor cleared at the start of the sweep can time out again while motors ahead of it are still being enabled.",
+    "remedy": "Already fixed in yam.arm.YamArm.enable(): it retries per-motor (up to 4 attempts) until each joint reports NORMAL_ERROR_CODE, calling self._clear_joint(joint) whenever it sees COMMUNICATION_LOST before the next retry. If this still fails on stage, do NOT hand-roll a fix — call arm.enable() again; it is idempotent per joint.",
+    "source": "yam/arm.py:266-292 (enable); commit 8979f7e \"Retry enable until each motor reports healthy\"",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "Opening the CAN bus raises usb.core.USBError 19 (\"No such device\") on every attempt after the first one in a process, or after a replug — looks like the CANable \"needs a replug\"",
+    "cause": "The stock gs_usb.GsUsb.start() calls usb.reset() unconditionally. On macOS, usb.reset() re-enumerates the adapter and invalidates the handle just opened, so the first open in a process works and every reopen (recovery from a mid-session dropout) fails.",
+    "remedy": "Do NOT physically replug or add a usb.reset() call. yam/can_compat.apply() monkeypatches GsUsb.start to skip usb.reset() on Darwin (IS_MACOS check) and is called automatically at import time (yam/can_compat.py:111). This is already imported by yam/arm.py, scripts/diagnose.py, scripts/monitor.py, and the diagnostics scripts via `from yam import can_compat`. If a fault still reads USBError 19, call arm.reconnect() (rebuilds bus via can_compat.open_bus) rather than touching the physical cable.",
+    "source": "yam/can_compat.py:31-50 (apply), :111 (apply() called at import); commit 0ab530f \"Fix CANable reopen on macOS; add tunnel access and dropout recovery\"",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "can.interface.Bus(interface='gs_usb', ...) intermittently fails with USBError/OSError right after a previous process using the adapter exited",
+    "cause": "A process that has just exited can leave the device claimed for a moment; libusb reports that as \"No such device\" rather than \"busy\", which misleadingly reads like the adapter was unplugged.",
+    "remedy": "Use yam.can_compat.open_bus() instead of calling can.interface.Bus directly — it retries up to 6 times with 0.3*(attempt+1)s backoff and deliberately does NOT reset the adapter between attempts (a reset re-enumerates and turns a transient failure into a persistent one). Only after all 6 attempts fail does it call reset_adapter() + sleep 1.0s + one final attempt, raising RuntimeError telling the operator to unplug/replug only as a last resort.",
+    "source": "yam/can_compat.py:66-98 (open_bus)",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "CAN bus dies mid-session under load; polling the SAME bus handle after the drop gets nothing back from any motor",
+    "cause": "Two distinct root causes look identical from the outside: (1) the host's CAN controller went bus-off — the arm is fine but our transceiver stopped listening; or (2) the arm itself lost power/signal. They require different fixes.",
+    "remedy": "Diagnose with scripts/diagnostics/load_dropout_test.py's investigate(): poll the same bus.handle for 15s first. If nothing responds, open a FRESH bus via can_compat.open_bus() and poll for 10s. If the fresh handle gets replies, it was host-side bus-off — fix is arm.reconnect() (rebuild the bus object in place). If neither handle gets anything, the arm is genuinely unpowered/disconnected — check the physical power/CAN path, not software.",
+    "source": "scripts/diagnostics/load_dropout_test.py:52-117 (investigate); yam/arm.py:312-325 (reconnect)",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "After a dropout, motors come back reporting error_code 0x0 (\"disabled\")",
+    "cause": "A motor only returns to the disabled state via a reboot — this means it lost electrical POWER, not just CAN signal.",
+    "remedy": "This is a hardware power-path fault, not something software can recover from. Check the arm's power supply, its connector at the arm base, and any part of the power path that flexes with motion. Re-run scripts/diagnose.py after power is confirmed stable, then arm.enable() again. Do not attempt reconnect()/clear_errors() first — those only fix signal-level or latch-level faults.",
+    "source": "scripts/diagnostics/load_dropout_test.py:107-117 (VERDICT block); scripts/diagnostics/wiggle_test.py:132-138,9-13",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "After a dropout, motors come back reporting error_code 0x1 (\"enabled\") or still latched 0xD, never 0x0",
+    "cause": "The motor never stopped running — it was simply unreachable. This means the CAN SIGNAL line was interrupted (connector, twisted pair, adapter end), not the power supply.",
+    "remedy": "This is recoverable in software: call arm.recover_stale_motors() to clear any 0xD picked up during the outage, then arm.enable(). If the same bus handle stopped responding entirely (not just one motor), also call arm.reconnect() first — see the bus-off entry above. Physically, check the CAN connector and cable, not the power supply.",
+    "source": "scripts/diagnostics/wiggle_test.py:139-143 (VERDICT block); scripts/diagnostics/load_dropout_test.py:114-116",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "Joint positions/feedback look like they're from a different, earlier moment than the command just sent (stale/desynced readings), or exchanges seem to silently accept the wrong motor's echo",
+    "cause": "The adapter echoes every frame we transmit, so the receive queue is never empty. An exchange that reads without resynchronising can fall one frame behind; once behind, every read returns the previous exchange's reply, and if that stale frame happens to carry the expected id it is silently accepted as current.",
+    "remedy": "Already handled by YamArm._exchange(): it drains the queue (self._drain()) before every send attempt (not just the first), skips echoed transmissions (`if not reply.is_rx: continue`), and re-drains before any resend. Do not add ad-hoc retry loops around _exchange — the resync logic is already there and validated by scripts/diagnostics/validate_exchange.py (reports arm.resyncs / arm.failures).",
+    "source": "yam/arm.py:181-228 (_exchange, _drain); scripts/diagnostics/validate_exchange.py",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "MotorCommunicationError: 'no response from <joint> (motor id 0x..) after 5 attempts'",
+    "cause": "The named joint did not answer any of the retried exchanges within response_timeout (default 0.05s) after the queue was drained each time.",
+    "remedy": "Run `.venv/bin/python scripts/diagnose.py` to check whether that motor is online at all. If NO motor on the bus acknowledges any frame, the fault is upstream of software: check the arm's power supply / e-stop, the CAN cable seating at both adapter and arm, and the adapter's 120-ohm termination jumper. If only this one joint fails to respond while others are fine, suspect that joint's own CAN stub/connector.",
+    "source": "yam/arm.py:223-228 (MotorCommunicationError raise); scripts/diagnose.py:87-94 (no-ack diagnostic message)",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "MotorFaultError: '<joint>: overvoltage' / 'undervoltage' / 'overcurrent' / 'MOS over-temperature' / 'coil over-temperature' / 'overload'",
+    "cause": "These are the DM motor error codes (0x8, 0x9, 0xA, 0xB, 0xC, 0xE respectively) that report a real physical condition, as opposed to 0xD which is just a comms timeout.",
+    "remedy": "recover_stale_motors() and clear_errors() deliberately do NOT clear these — they are left latched on purpose so a physical fault isn't papered over mid-demo. Stop moving that joint, let it cool / check the power rail, and only then send CLEAR_ERROR (arm.clear_errors()) followed by arm.enable(). If it re-latches immediately, this is a hardware issue, not a software recoverable one.",
+    "source": "yam/dm_motor.py:23-36 (ERROR_MESSAGES, COMMUNICATION_LOST); yam/arm.py:245-252 (recover_stale_motors docstring: \"Every other code ... is left latched rather than cleared out from under the operator\")",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "MotorFaultError: '<joint>: NN C exceeds 70 C limit' during read_state()/command_positions()",
+    "cause": "_check_faults() in yam/arm.py compares max(temperature_mos, temperature_rotor) against SafetyLimits.max_temperature (default 70.0C) on every state read and raises if exceeded.",
+    "remedy": "Stop commanding that joint immediately (do not retry through the fault). Let it cool before re-enabling. This ceiling is deliberately below the motor's real thermal limit as a demo-safety margin — do not raise SafetyLimits.max_temperature to push through it on stage.",
+    "source": "yam/arm.py:126-139 (SafetyLimits.max_temperature), 360-366 (_check_faults)",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "Gripper (or any joint) latches 0xD specifically during monitor.py or a long enrollment session, but not during fast trajectory execution",
+    "cause": "Historically, monitor.py enabled the gripper and polled at 4Hz (0.25s interval reads), which is well inside the 0.3-0.4s silent-gap window measured to latch the watchdog.",
+    "remedy": "Already fixed: scripts/monitor.py now reads continuously in the loop and only PRINTS on the interval (`while time.time() < deadline: state = arm.read_state(); ... if elapsed >= next_print: print(...)`), so the command stream to the motor never actually gaps even though the terminal only updates every --interval seconds. If a new script polls slower than ~10Hz while a motor is enabled, expect this same latch.",
+    "source": "scripts/monitor.py:33-42 (comment + continuous read loop); yam/arm.py:81-86 (measured hazard note); commit 920c5e4",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "Gripper motion commands are rejected/clamped unexpectedly, or there's no fixed joint limit like the other 6 joints",
+    "cause": "The gripper is a linear stage whose travel depends on which jaws are physically fitted, so unlike ARM_JOINTS it has no SDK-provided fixed limit — a guessed limit would move the gripper on the first clamp.",
+    "remedy": "GRIPPER_JOINT limits are the MEASURED closed/open stops on this specific arm, backed off 50mrad each: GRIPPER_CLOSED_POSITION=-5.158, GRIPPER_OPEN_POSITION=0.056 (yam/arm.py:95-96,101-105). The closed stop is a true hard stop (repeats to 0.1mm); the open stop is compliant and drifts up to 1.3mm under torque, so it is NOT the datum. If the jaws are ever swapped, these constants must be re-measured before any gripper motion is trusted.",
+    "source": "yam/arm.py:92-105 (GRIPPER_JOINT, measurement comments); commit 920c5e4 \"Add DM clear-error, calibrated gripper, and jaw-aware kinematics\"",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "Gripper closes with excessive force / crushes an object, or a torque limit set for the gripper feels far too permissive",
+    "cause": "An earlier guessed max_torque of 3.0Nm on the gripper allowed roughly 205N of grip force (kp was also a guessed 5.0, not the SDK's real 20.0).",
+    "remedy": "GRIPPER_JOINT.max_torque is now 0.6Nm (~41N of grip via GRIPPER_METRES_PER_RAD = 0.096/6.57 m/rad), and kp is the SDK's actual 20.0. Use gripper_force_to_torque(newtons) to convert a desired grip force into a torque command instead of hand-picking a torque value. Do not raise max_torque above 0.6Nm without an explicit force-safety review.",
+    "source": "yam/arm.py:88-90,98-105,108-109 (GRIPPER_METRES_PER_RAD, GRIPPER_JOINT, gripper_force_to_torque)",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "kinematics.tip_position()/collision checks look wrong for the gripper — jaws appear open when the intent was closed, or vice versa, by ~84mm",
+    "cause": "link_transforms() defaults gripper_opening=1.0 (open) deliberately, because leaving the jaw joints at 0 models a closed gripper as 84mm wider than it physically is — an unsafe collision-checking default in the other direction.",
+    "remedy": "Always pass the ACTUAL gripper_opening (from gripper_opening_fraction(position), yam/arm.py:112-115) into kinematics.link_transforms()/jaw_gap()/collision_spheres() rather than relying on the default when checking collisions against a partially-closed gripper.",
+    "source": "yam/kinematics.py:192-205 (link_transforms gripper_opening default and comment), 225-234 (jaw_gap); yam/arm.py:112-115 (gripper_opening_fraction)",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "ExecutionAborted: '<joint> torque jumped N.NNNm above its gravity baseline ... treating that step as contact'",
+    "cause": "GuardedExecutor compares each joint's torque against a slow exponential baseline of its own recent torque (yam/execution.py); a step change relative to that baseline is treated as unexpected contact/collision, since gravity load changes slowly while a collision is a step. This is an intentional safety abort, not a bug.",
+    "remedy": "This means the arm hit something not in the model (bad kinematics, an obstacle enrolled slightly off, or something that moved after the scan). Stop and physically inspect before retrying — do NOT just re-run with a higher max_torque_residual on stage. If it is a known false trip for a specific joint (e.g. breaking stiction on a lift), the per-joint allowance in GuardLimits.max_torque_residual (default (0.5,1.5,4.5,2.0,0.8,0.8) for joints1-6) can be tuned ahead of time, not live.",
+    "source": "yam/execution.py:112-135 (_check residual logic), 50-59 (GuardLimits.max_torque_residual)",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "ExecutionAborted: '<joint> is pulling N.NNm, past the 13.0Nm backstop'",
+    "cause": "Hard absolute torque ceiling (GuardLimits.absolute_torque=13.0) as a backstop for a gradual squeeze that never produces a detectable step against the residual baseline. Measured normal soak load is ~12.36Nm, so headroom is deliberately tight (~0.6Nm).",
+    "remedy": "Treat as a real overload/contact event — stop and inspect. This ceiling is intentionally close to normal operating torque (joint3 alone draws ~9.5-11Nm lifting the arm's own weight) so it is easy to trip with an already-heavy trajectory; if this fires on an otherwise-clear path, reconsider the trajectory rather than raising the ceiling on stage.",
+    "source": "yam/execution.py:60-63 (GuardLimits.absolute_torque), 140-146 (absolute-torque check)",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "ExecutionAborted: '<joint> is N.Ndeg behind its command -- something is resisting the arm'",
+    "cause": "Tracking error (target - measured position) exceeded GuardLimits.max_tracking_error (0.35 rad, deliberately generous because gravity sag alone reaches ~0.22 rad on this arm) — a backstop signal, not the primary contact detector.",
+    "remedy": "This usually means the arm is physically obstructed/resisted rather than a false trip, given how generous the threshold already is. Clear the obstruction, then re-run scripts/plan_and_run.py (dry-run first, without --execute) to re-verify the path before re-attempting execution.",
+    "source": "yam/execution.py:64-67 (GuardLimits.max_tracking_error), 148-154 (tracking-error check)",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "'ABORTED: waypoint N is not collision-free: <detail>' from scripts/plan_and_run.py --execute",
+    "cause": "GuardedExecutor.run() checks each waypoint against the ArmSafetyChecker before commanding it; this fires if the live arm has drifted from the planned path (via slew/tracking error) into a waypoint that is not clear, since the guard re-checks every single tick rather than trusting the pre-verified plan.",
+    "remedy": "Read the detail string from checker.explain(target) printed in the abort message — it distinguishes an environment collision (arm sphere vs. voxel map, with the offending clearance in mm) from a self-collision (from yam.environment.ArmSafetyChecker.explain / MujocoCollisionChecker). Re-plan with a larger --margin or re-scan the obstacle map if the scanned geometry is stale.",
+    "source": "yam/execution.py:176-181 (waypoint collision-free check); yam/environment.py:71-82 (explain)",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "scripts/plan_and_run.py prints 'sag check ... N of M waypoints fail' and refuses to execute ('refusing to execute: sag check failed')",
+    "cause": "verify_under_tracking_error() checks whether the path stays collision-free even when the arm lags behind its command by up to the guard's tracking-error limit under gravity — a clear commanded path can still be unsafe once real-world sag/lag is accounted for.",
+    "remedy": "Reduce the lag: raise --gain-scale, slow the motion, or re-plan with a larger --margin. Only pass --allow-unverified-sag to override if the operator is knowingly accepting the risk (e.g. a low-consequence demo move) — this is an explicit opt-in flag, not a default.",
+    "source": "scripts/plan_and_run.py:88-95,105-106 (sag check and refusal), yam/planner.py verify_under_tracking_error",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "About 10% of poses that pass joint-limit checks still self-collide, with no error raised by command_positions()/move_to()",
+    "cause": "yam/arm.py's ARM_JOINTS limits and YamArm.command_positions() only clamp to per-joint range and slew rate — nothing in yam/arm.py itself checks self-collision. Being inside joint limits does not mean a pose is safe.",
+    "remedy": "Always route planned poses through yam.environment.ArmSafetyChecker (used by scripts/plan_and_run.py) before commanding them directly with YamArm. In particular, joint2 is the known trap: from home it moves the tip DOWN and self-collides against the base past roughly +105deg; joint3 is the joint that actually lifts and is self-collision-free across its whole range from home.",
+    "source": "yam/arm.py:70-80 (self-collision hazard comment); yam/environment.py:27-66 (ArmSafetyChecker.is_free/self_is_free)",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "A late/slow tick (e.g. after a stall or GC pause) causes the arm to visibly lunge toward a distant target on the next command",
+    "cause": "Without a cap, a long stall between ticks would let the per-tick step scale unboundedly with elapsed time (max_joint_speed * elapsed), authorising a large jump on the next successful send.",
+    "remedy": "command_positions() already caps step_limit as `min(safety.max_joint_speed * elapsed, safety.max_step_per_tick)` — the per-tick step can never exceed max_step_per_tick (default 0.05 rad) regardless of how long the stall was. If lunges are still observed, check whether a caller is bypassing command_positions() and sending raw MIT frames directly.",
+    "source": "yam/arm.py:370-388 (command_positions step_limit); yam/arm.py:136-138 (SafetyLimits.max_step_per_tick docstring)",
+    "severity": "recoverable"
+  },
+  {
+    "symptom": "scripts/diagnose.py prints '1. USB adapter: NOT FOUND'",
+    "cause": "GsUsb.scan() found zero gs_usb-compatible adapters on the USB bus at all — this is a USB enumeration failure, upstream of anything CAN-protocol related.",
+    "remedy": "Per the script's own guidance: check the USB cable to the CANable. Confirm enumeration independently with `ioreg -p IOUSB -w0 -l | grep -i canable` (yam.can_compat.find_adapter's error message carries the same command). This agent must NOT itself probe/replug the physical device — hand this diagnostic command and the physical-check instruction to whoever owns the live bus.",
+    "source": "scripts/diagnose.py:26-30; yam/can_compat.py:101-108 (find_adapter)",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "scripts/diagnose.py reports '0/N motors online' and 'No frame was acknowledged by anything on the bus'",
+    "cause": "A CAN frame is only ACKed if at least one other powered node is listening on the bus. Zero acknowledgement points at the arm side (power/wiring), not the laptop/adapter, since the adapter itself already opened successfully at this point in the script.",
+    "remedy": "Check, in order: (1) is the arm's power supply on and any e-stop released; (2) is the CAN cable seated at both the adapter and the arm; (3) does the adapter need its 120 ohm termination jumper set. Software-side recovery (reconnect/clear_errors) cannot fix zero acknowledgement.",
+    "source": "scripts/diagnose.py:86-94",
+    "severity": "stop_the_demo"
+  },
+  {
+    "symptom": "Phone/tablet on venue wifi (e.g. eduroam or guest network) cannot reach the enrollment viewer's LAN address at all",
+    "cause": "eduroam and most guest wifi enforce client isolation, so a LAN address cannot reach the laptop no matter how the server is bound — this is a network policy issue, not a server bug.",
+    "remedy": "Run scripts/enroll.py with --tunnel to expose the viewer through a Cloudflare quick tunnel (yam/viz_server.py start_tunnel(), spawns `cloudflared tunnel --url http://127.0.0.1:<port>`). The resulting URL is public, so the API is token-guarded (secrets.token_urlsafe(12)); use the full URL including the `?k=<token>` query string printed by enroll.py, not the bare tunnel URL. Requests from localhost are exempt from the token check.",
+    "source": "scripts/enroll.py:71-72,106-121 (--tunnel flag, announce_tunnel); yam/viz_server.py:40-44,134,322-354 (token, start_tunnel); commit 0ab530f",
+    "severity": "recoverable"
+  }
+]
