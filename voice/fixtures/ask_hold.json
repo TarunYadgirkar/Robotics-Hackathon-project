@@ -1,0 +1,9 @@
+{
+  "query": "garment inside out",
+  "tier": "ask",
+  "matched_task_id": "garment-inside-out",
+  "match_score": 1.0,
+  "coverage_detail": {"covered": [], "uncovered": []},
+  "evidence": {"n_clips": 9},
+  "utterance_slots": {"n_clips": 9}
+}

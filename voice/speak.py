@@ -13,13 +13,28 @@ repo-root .env file — see get_api_key below), playing the returned mp3 with
 `afplay`. Falls back to macOS `say` (Samantha, matching pipeline/narrate.py's
 voice choice) when no key is found at runtime.
 
-utterance_slots keys this module expects per tier (not part of the frozen
-outer schema, but the contract Agent D and Agent B need to agree on in
-integration — see voice/fixtures/*.json for worked examples):
-    abstain:                query, hours, n_tasks, near1, near2
-    abstain (post-feedback): n_live_demos, n_live_demonstrators, live_stat_line
-    ask:                    n_clips, task, cluster_maj_n, cluster_min_n, silhouette, perm_p
-    act:                    (none — act-silent speaks nothing)
+Voice (2026-08-30, user feedback "sounds very AI"): switched off narrate.py's
+default Rachel (21m00Tcm4TlvDq8ikWAM, the generic ElevenLabs demo voice) to
+Eric - Smooth, Trustworthy (cjVigY5qzO86Huf0OWal), a premade conversational
+voice ElevenLabs' own catalog describes as "perfect for agentic use cases" --
+picked by querying GET /v1/voices live with the real key and reading
+labels/descriptions, not guessed. Paired with tuned voice_settings
+(stability 0.5, similarity_boost 0.75, style 0.15, speaker_boost on) for a
+warmer, less flat delivery, still on eleven_turbo_v2_5 for latency.
+
+utterance_slots keys this module expects per tier/template (not part of the
+frozen outer schema, but the contract Agent D and Agent B/F need to agree on
+in integration — see voice/fixtures/*.json for worked examples). Templates
+marked (--template) are never auto-inferred from `tier`; the caller (F's
+state machine) must pass --template explicitly:
+    abstain:                       query, hours, n_tasks, near1, near2
+    abstain (post-feedback):       n_live_demos, n_live_demonstrators, live_stat_line
+    ask:                           n_clips, task, cluster_maj_n, cluster_min_n, silhouette, perm_p
+    act:                           (none — act-silent speaks nothing)
+    ask_hold (--template):         n_clips
+    abstain_restate (--template):  query
+    abstain_howto (--template):    query, hours, n_tasks, near1, near2 (same evidence as abstain)
+    attempt_result (--template):   n_instruction_words, n_matching_demos, query
 
 Orchestrator amendment (2026-08-30, user-approved): Agent A's real data shows
 no deconfounded task splits into two balanced methods -- every clean split
@@ -28,6 +43,17 @@ honest majority-vs-outlier ask instead of a "two balanced methods" ask; the
 p-value disclosure is deliberate and must not be dropped even though it is
 often > 0.05 (that is the honest point -- with this few clips we cannot rule
 out chance). This replaced the earlier k/cluster_a_n/cluster_b_n ask slots.
+
+Orchestrator amendment (2026-08-30, second round): two more explicit-template
+variants for the human-in-the-loop instruction beat, coordinated with Agent F
+(F rewires BEAT 3 to consume them; F computes n_instruction_words from the
+live transcript -- this module never fabricates it):
+  - abstain_howto: same computed abstain evidence, but asks "How do I do it?"
+    instead of offering to watch a demo.
+  - attempt_result: spoken after the robot physically attempts the task
+    following spoken instruction alone. n_instruction_words and
+    n_matching_demos must both come from utterance_slots (computed
+    upstream), never invented here.
 """
 import argparse
 import json
@@ -42,8 +68,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_FILENAME = ".env"
-VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # matches pipeline/narrate.py
-MODEL_ID = "eleven_turbo_v2_5"
+# Eric - Smooth, Trustworthy: premade conversational voice, chosen by querying
+# GET /v1/voices live (see coordination/status/D.json) after user feedback that
+# narrate.py's default Rachel (21m00Tcm4TlvDq8ikWAM) "sounds very AI".
+VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "cjVigY5qzO86Huf0OWal")
+VOICE_NAME = "Eric - Smooth, Trustworthy"  # for logging only, not sent to the API
+MODEL_ID = "eleven_turbo_v2_5"  # best latency/naturalness tradeoff available to this account
+VOICE_SETTINGS = {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0.15,
+    "use_speaker_boost": True,
+}
 SAY_VOICE = "Samantha"  # matches pipeline/narrate.py's macOS say fallback
 LATENCY_WARN_S = 1.5
 
@@ -74,6 +110,18 @@ TEMPLATES = {
     "ask_hold": "Holding. {n_clips} demonstrations remain unexecuted.",
     "abstain_restate": (
         "I have zero demonstrations of {query}. I will not attempt it."
+    ),
+    # Added for the human-in-the-loop instruction beat (orchestrator amendment,
+    # 2026-08-30, coordinated with Agent F). Explicit --template selection only.
+    "abstain_howto": (
+        "I have watched {hours} hours of human work across {n_tasks} tasks. "
+        "None of them is {query}. The closest things I know are {near1} and {near2}. "
+        "I have zero demonstrations of this. How do I do it?"
+    ),
+    "attempt_result": (
+        "I heard your {n_instruction_words} words of instruction and tried. "
+        "I still have {n_matching_demos} demonstrations of {query} - one attempt on "
+        "instruction is not knowledge. Watch me learn faster if you show me."
     ),
 }
 
@@ -145,7 +193,11 @@ def build_elevenlabs_request(text, key):
     URL, headers, and body are well-formed per the documented API.
     """
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}/stream"
-    body = json.dumps({"text": text, "model_id": MODEL_ID}).encode()
+    body = json.dumps({
+        "text": text,
+        "model_id": MODEL_ID,
+        "voice_settings": VOICE_SETTINGS,
+    }).encode()
     headers = {
         "xi-api-key": key or "<no-key>",
         "Content-Type": "application/json",
@@ -217,7 +269,8 @@ def main():
         return 0
 
     engine, latency = speak(text)
-    log(f"[speak] template={template_name} engine={engine} latency={latency:.3f}s")
+    voice_note = f" voice={VOICE_NAME}" if engine == "elevenlabs" else ""
+    log(f"[speak] template={template_name} engine={engine} latency={latency:.3f}s{voice_note}")
     return 0
 
 

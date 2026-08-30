@@ -16,14 +16,20 @@ SPEAK = HERE / "speak.py"
 PYTHON = HERE.parent / ".venv" / "bin" / "python"
 FIXTURES = sorted((HERE / "fixtures").glob("*.json"))
 
+# Templates that are never auto-inferred from `tier` (selected only via
+# --template by the caller, e.g. Agent F's state machine) -- a fixture whose
+# stem matches one of these must be run with that flag forced, since its
+# `tier` field alone would render the wrong (or an ambiguous) template.
+EXPLICIT_TEMPLATES = {"ask_hold", "abstain_restate", "abstain_howto", "attempt_result"}
+
 
 def main():
     assert FIXTURES, "no fixture decision JSONs found in voice/fixtures/"
     for fixture in FIXTURES:
-        result = subprocess.run(
-            [str(PYTHON), str(SPEAK), str(fixture), "--no-audio"],
-            capture_output=True, text=True,
-        )
+        cmd = [str(PYTHON), str(SPEAK), str(fixture), "--no-audio"]
+        if fixture.stem in EXPLICIT_TEMPLATES:
+            cmd += ["--template", fixture.stem]
+        result = subprocess.run(cmd, capture_output=True, text=True)
         assert result.returncode == 0, f"{fixture.name}: exited {result.returncode}: {result.stderr}"
         text = result.stdout.rstrip("\n")
         assert "{" not in text, f"{fixture.name}: unfilled template placeholder in {text!r}"

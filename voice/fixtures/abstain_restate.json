@@ -1,0 +1,9 @@
+{
+  "query": "bottle flip",
+  "tier": "abstain",
+  "matched_task_id": null,
+  "match_score": 0.615,
+  "coverage_detail": {"words": []},
+  "evidence": {"n_matching_demos": 0},
+  "utterance_slots": {"query": "bottle flip"}
+}
