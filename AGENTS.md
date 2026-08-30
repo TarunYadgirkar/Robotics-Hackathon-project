@@ -13,6 +13,8 @@ Done (all pushed to origin/idk-demo, latest `81277f4`):
 - Gesture-authoring landmines learned on hardware, recorded in the JSONs' notes: the arm SAGS a few degrees under gravity vs commanded (j2 27.6 measured vs 30 commanded, j3 to its 0.0 floor), so any relative offset that "undoes" a previous gesture underflows the j2/j3 soft floors and is REFUSED — end chained gestures at their own start pose, keep j2/j3 offsets >= 0. `arm/verify_poses.py` now verifies `can_fling` from `can_pickup`'s end pose (`follows` map). All 11 gestures PASS collision verification.
 - Killed a stale `run_demo.py` that was holding the CAN bus (that's what a "CanOperationError: message could not be sent" precheck FAIL with adapter present looks like).
 
+- **MCP server (`21c6822`)**: `mcp_server.py` (stdio, mcp 2.x `MCPServer`) — tools robot_speak/robot_listen/robot_decide (shell out to the demo's own CLIs) + arm_status/arm_home/arm_gesture/arm_disconnect (arm IN-PROCESS so the server owns the CAN bus and keepalive holds a gripped can between tool calls). Registered via `claude mcp add yam-robot` (local scope, this repo dir). While it has the arm connected, run_demo.py must NOT run — arm_disconnect first. Server instructions embed the flip-flow tool recipe.
+
 In flight: nothing. Code review of `81277f4` landed as `4b90fe8`: release-question loop now mirrors classify_reply (both keyword sets = unrecognized, never guess toward a throw; "hold" is the beat's grip word, excluded from NEGATIVE there), a NEGATIVE reply at either prompt or 3 unrecognized answers runs the new gentle `can_release` gesture (lower, open past the can at 9.3%/s, end at own start pose) instead of flinging or holding forever.
 
 Blocked:
