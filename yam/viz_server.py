@@ -36,6 +36,7 @@ class VizServer:
         self.scan_summary: Optional[Dict[str, Any]] = None
         self.scan_points = None          # numpy array, downsampled for the viewer
         self.registration: Optional[Dict[str, Any]] = None
+        self.kinematics = None
         #: Guards the API once the server is reachable beyond this machine. The
         #: page is served freely so it can load and read the token out of its own
         #: URL; the endpoints that capture points and write files are not.
@@ -185,6 +186,9 @@ class VizServer:
                 if not self._authorized():
                     self._send_json({"error": "unauthorized"}, 401)
                     return
+                if self.path.startswith("/api/align_seed"):
+                    self._align_seed()
+                    return
                 if self.path.startswith("/api/scan_erase"):
                     self._erase()
                     return
@@ -207,6 +211,51 @@ class VizServer:
                 if action:
                     server.commands.put(action)
                 self._send_json({"accepted": bool(action)})
+
+            def _align_seed(self):
+                """Align the scan using the arm's known shape, seeded by one tap.
+
+                The tap only has to land within a hand's width of the arm; the
+                precision comes from ICP over thousands of known surface points
+                afterwards. A global search without a seed is what does not work:
+                the arm is a small object in a room-sized cloud, and
+                point-to-cloud distance alone will park it against any wall.
+                """
+                length = int(self.headers.get("Content-Length", 0))
+                try:
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    seed = payload["seed"]
+                    pose = payload["pose"]
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    self._send_json({"error": "expected {seed: [x,y,z], pose: [6 joint angles]}"}, 400)
+                    return
+
+                if server.scan_points is None or not len(server.scan_points):
+                    self._send_json({"error": "no scan uploaded yet"}, 400)
+                    return
+
+                from yam.kinematics import YamKinematics
+                from yam.scan_registration import dense_arm_surface, refine_from_seed
+
+                kinematics = server.kinematics or YamKinematics()
+                model = dense_arm_surface(kinematics, pose, max_points=3000)
+                result = refine_from_seed(server.scan_points, model, seed)
+
+                if result is None:
+                    self._send_json({"error": "no fit found near that point"}, 400)
+                    return
+
+                server.registration = {
+                    "rotation": result.rotation.tolist(),
+                    "translation": result.translation.tolist(),
+                    "rmse_mm": round(result.rmse * 1000, 1),
+                    "pairs": 0,
+                    "inliers": result.inliers,
+                    "model_points": result.model_points,
+                    "trustworthy": bool(result.is_trustworthy),
+                    "method": "arm-shape ICP from a seed",
+                }
+                self._send_json(server.registration)
 
             def _erase(self):
                 """Delete scanned geometry inside a sphere.
