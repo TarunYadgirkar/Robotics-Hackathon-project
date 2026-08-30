@@ -136,6 +136,8 @@ def verify_under_tracking_error(
     tracking_error: float,
     samples: int = 24,
     seed: int = 0,
+    lower: Optional[Sequence[float]] = None,
+    upper: Optional[Sequence[float]] = None,
 ) -> dict:
     """Check a path still clears when the arm lags behind the command.
 
@@ -153,16 +155,27 @@ def verify_under_tracking_error(
     rng = np.random.default_rng(seed)
     failures = []
     worst = float("inf")
+    low = None if lower is None else np.asarray(lower, dtype=float)
+    high = None if upper is None else np.asarray(upper, dtype=float)
 
     for index, waypoint in enumerate(path):
         waypoint = np.asarray(waypoint, dtype=float)
         for _ in range(samples):
             offset = rng.uniform(-tracking_error, tracking_error, size=len(waypoint))
             perturbed = waypoint + offset
+            # A joint cannot lag past its mechanical stop. Without this the check
+            # condemns paths for colliding in configurations the arm physically
+            # cannot reach -- joints 2 and 3 bottom out at 0.0, so any negative
+            # lag there was testing an impossible pose.
+            if low is not None and high is not None:
+                perturbed = np.clip(perturbed, low, high)
             clearance = checker.clearance(perturbed)
             worst = min(worst, clearance)
             if not checker.is_free(perturbed):
-                failures.append({"index": index, "offset_deg": np.degrees(offset).round(1).tolist()})
+                failures.append({
+                    "index": index,
+                    "offset_deg": np.degrees(perturbed - waypoint).round(1).tolist(),
+                })
                 break
 
     return {

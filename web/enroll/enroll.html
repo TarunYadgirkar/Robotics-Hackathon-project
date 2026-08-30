@@ -22,7 +22,7 @@
   canvas{display:block}
   /* touch-action:none is what stops Safari claiming the gesture as page zoom;
      without it a pinch minimises the tab instead of reaching the canvas. */
-  #scene{position:fixed;inset:0;touch-action:none}
+  #scene{position:fixed;inset:0;width:100vw;height:100vh;touch-action:none}
   html,body{touch-action:none;overscroll-behavior:none}
 
   header{position:fixed;top:0;left:0;right:0;padding:28px 32px;pointer-events:none;
@@ -418,7 +418,7 @@ function framingForAspect(){
 }
 
 function resize(){
-  renderer.setSize(innerWidth, innerHeight, false);
+  renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 }

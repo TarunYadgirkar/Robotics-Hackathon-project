@@ -86,7 +86,8 @@ def main() -> None:
         print(f"  verified {len(dense)} interpolated states, min slack {min(clearances) * 1000:+.1f} mm")
 
         limits = GuardLimits()
-        sag = verify_under_tracking_error(checker, dense, limits.max_tracking_error, samples=12)
+        sag = verify_under_tracking_error(checker, dense, limits.max_tracking_error, samples=12,
+                                          lower=lower, upper=upper)
         print(f"\n  sag check at the guard's +-{sag['tracking_error_deg']:.0f}deg tracking limit: "
               f"{sag['failures']} of {len(dense)} waypoints fail")
         if not sag["ok"]:

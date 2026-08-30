@@ -14,3 +14,4 @@ workcell_map.npz
 ios/YamEnroll/YamEnroll.xcodeproj/
 ios/**/build/
 DerivedData/
+plan_preview.html
