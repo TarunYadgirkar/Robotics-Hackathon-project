@@ -11,3 +11,6 @@ enrollment.json
 .env
 .env.*
 !.env.example
+
+# brain: cached embeddings are committed; call log is local noise
+brain/cache/calls.jsonl

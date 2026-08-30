@@ -19,9 +19,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from coverage import COVERAGE_MATCH_THRESHOLD, content_words, rank_tasks  # noqa: E402
+from coverage import Matcher, content_words, is_match  # noqa: E402
+from providers import get_provider  # noqa: E402
 from metadata import clips_for_task, corpus_stats, load_clips, load_tasks  # noqa: E402
 from variance_io import load_live_index, load_variance  # noqa: E402
+
+
+_MATCHER_CACHE = {}
+
+
+def get_matcher(tasks, prefer="auto"):
+    """One Matcher per (task set, provider preference). Model loads once."""
+    key = (id(tasks), prefer)
+    if key not in _MATCHER_CACHE:
+        _MATCHER_CACHE[key] = Matcher(tasks, provider=get_provider(prefer))
+    return _MATCHER_CACHE[key]
 
 
 def cluster_sizes(labels):
@@ -48,13 +60,14 @@ def _abstain_result(query, q_words, ranked, stats, live):
         if best is not None
         else {"covered": [], "uncovered": [{"word": w, "closest": None, "score": 0.0} for w in q_words]}
     )
-    match_score = round(best["coverage"], 3) if best is not None else 0.0
+    match_score = round(best["score"], 3) if best is not None else 0.0
     nearest = ranked[:3]
 
     evidence = {
         "n_matching_demos": 0,
         "nearest_tasks": [
-            {"task_id": r["task_id"], "display_name": r["display_name"], "coverage": round(r["coverage"], 3)}
+            {"task_id": r["task_id"], "display_name": r["display_name"],
+             "score": round(r["score"], 3), "coverage": round(r["coverage"], 3)}
             for r in nearest
         ],
         "corpus_total_clips": stats["n_clips"],
@@ -151,37 +164,43 @@ def _matched_result(query, best, clips, variance, live):
         "query": query,
         "tier": tier,
         "matched_task_id": task_id,
-        "match_score": round(best["coverage"], 3),
+        "match_score": round(best["score"], 3),
         "coverage_detail": coverage_detail,
         "evidence": evidence,
         "utterance_slots": utterance_slots,
     }
 
 
-def decide(query, include_live=False, variance_path=None, live_path=None, tasks=None, clips=None):
+def decide(query, include_live=False, variance_path=None, live_path=None,
+           tasks=None, clips=None, prefer="auto"):
     tasks = tasks if tasks is not None else load_tasks()
     clips = clips if clips is not None else load_clips()
     stats = corpus_stats(tasks, clips)
 
+    matcher = get_matcher(tasks, prefer)
     q_words = content_words(query)
-    ranked = rank_tasks(q_words, tasks)
+    ranked = matcher.rank(query, q_words)
     best = ranked[0] if ranked else None
     live = _live_for_query(query, include_live, live_path)
 
-    if not q_words or best is None or best["coverage"] < COVERAGE_MATCH_THRESHOLD:
-        return _abstain_result(query, q_words, ranked, stats, live)
-
-    variance = load_variance(variance_path)
-    return _matched_result(query, best, clips, variance, live)
+    if not q_words or best is None or not is_match(best, matcher):
+        result = _abstain_result(query, q_words, ranked, stats, live)
+    else:
+        variance = load_variance(variance_path)
+        result = _matched_result(query, best, clips, variance, live)
+    result["provider_used"] = matcher.backend
+    return result
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Decision brain: coverage + variance -> act/ask/abstain")
     parser.add_argument("query", help="task query, e.g. \"bottle flip\"")
     parser.add_argument("--include-live", action="store_true", help="fold in feedback/live_index.json if present")
+    parser.add_argument("--provider", default="auto", choices=["auto", "local", "fireworks", "none"],
+                        help="embedding backend; 'none' forces the difflib fallback")
     args = parser.parse_args(argv)
 
-    result = decide(args.query, include_live=args.include_live)
+    result = decide(args.query, include_live=args.include_live, prefer=args.provider)
     print(json.dumps(result))
     return 0
 

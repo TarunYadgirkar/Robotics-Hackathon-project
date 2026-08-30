@@ -122,6 +122,59 @@ def test_include_live_adds_evidence():
           result["tier"] == "abstain", result)
 
 
+def test_natural_language_queries_match():
+    """The regression that mattered: every case here returned abstain under the
+    difflib matcher (TP=0 on the 26-query benchmark). The old suite only ever
+    queried literal task names, so the failure was invisible."""
+    cases = [
+        ("iron a shirt", "garment-iron-press"),          # jargon: corpus says "garment", never "shirt"
+        ("attach a label", "garment-label-attachment"),  # morphology: attach vs attachment
+        ("check the quality of a garment", "garment-quality-checking"),
+    ]
+    for query, expected in cases:
+        result = decide(query)
+        check(f"{query!r} -> tier != abstain", result["tier"] != "abstain", result)
+        check(f"{query!r} -> matched {expected}", result["matched_task_id"] == expected, result)
+
+
+def test_beat3_abstains_are_hard_guards():
+    """STOP THE LINE if these fail. Tuning the matcher for aggregate accuracy
+    silently inverted BEAT 3 once already: at coverage>=0.5 'do a bottle flip'
+    matched a bottle-handling task because 'bottle' covered and 'flip' did not."""
+    for query in ("do a bottle flip", "bottle flip", "tie a tie"):
+        result = decide(query)
+        check(f"BEAT3 GUARD {query!r} -> abstain", result["tier"] == "abstain", result)
+        check(f"BEAT3 GUARD {query!r} -> no matched task", result["matched_task_id"] is None, result)
+
+
+def test_bottle_flip_names_its_nearest_tasks():
+    """The demo line: the arm looked, found bottle work, and refused anyway."""
+    result = decide("do a bottle flip")
+    nearest = [n["display_name"].lower() for n in result["evidence"]["nearest_tasks"]]
+    check("bottle flip -> nearest includes a bottle task",
+          any("bottle" in n for n in nearest), nearest)
+    uncovered = {u["word"] for u in result["coverage_detail"]["uncovered"]}
+    check("bottle flip -> can name 'flip' as the unrecognised word",
+          "flip" in uncovered, result["coverage_detail"])
+
+
+def test_no_false_positives_on_absent_tasks():
+    """FP=0 is the property we optimise for: a false positive inverts BEAT 3,
+    a false negative only makes the arm more cautious."""
+    absent = ["stack six cups", "solve a rubik's cube", "make a cup of coffee",
+              "whisk matcha", "peel a banana", "shuffle a deck of cards", "brush my teeth"]
+    false_positives = [q for q in absent if decide(q)["tier"] != "abstain"]
+    check("no false positives across absent-task queries", not false_positives, false_positives)
+
+
+def test_difflib_fallback_still_runs():
+    """A teammate without sentence-transformers must still get a runnable brain."""
+    result = decide("bottle cleaning", prefer="none")
+    check("prefer='none' -> difflib backend", result["provider_used"] == "difflib", result)
+    check("prefer='none' -> still matches an exact task name",
+          result["matched_task_id"] == "bottle-cleaning", result)
+
+
 def test_no_hardcoded_task_names_in_source():
     source = (HERE / "decide.py").read_text() + (HERE / "coverage.py").read_text()
     real_task_ids = {t["canonical_task_id"] for t in load_tasks()}
@@ -161,6 +214,11 @@ def main():
     test_excluded_task_falls_back_to_act()
     test_missing_variance_defaults_to_act_not_abstain()
     test_include_live_adds_evidence()
+    test_natural_language_queries_match()
+    test_beat3_abstains_are_hard_guards()
+    test_bottle_flip_names_its_nearest_tasks()
+    test_no_false_positives_on_absent_tasks()
+    test_difflib_fallback_still_runs()
     test_no_hardcoded_task_names_in_source()
     test_cli_json_contract()
 
