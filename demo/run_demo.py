@@ -20,22 +20,43 @@ Useful flags:
     --text-mode      start in typed-input mode (loud room; you can also switch live)
     --no-audio       render + print the spoken text without playing it
     --beat N         start at beat N (1-4), for a partial re-run
+    --sim-arm        print what the arm would do instead of commanding it
     --rehearse       drive all 4 beats through --text end-to-end, non-interactively
 
 KEYS (single keypress, no Enter):
-    SPACE   advance to the next step. Nothing ever happens without this.
+    SPACE   advance to the next step. A beat never starts without this.
     n       same as SPACE (in case the space bar is awkward on a podium)
     t       toggle input mode SPOKEN <-> TYPED, mid-demo, without breaking flow.
             This is the stage fallback for room noise. Same code path either way
-            (listen/transcribe.py --text), so nothing else changes.
+            (listen/transcribe.py --text), so nothing else changes. It also
+            covers the spoken REPLIES in beats 2 and 3, not just the queries.
     r       re-run the current step (e.g. STT misheard you)
     h       recover-home after a freeze (asks the arm for a second confirmation)
     q       quit. Arm is left where it is; it is not homed behind your back.
 
-EVERY ARM MOTION IS ITS OWN KEYPRESS. Steps prefixed [ARM] do not run until you
-press SPACE for that step specifically, and the step banner tells you the motion
-name and its duration before it moves. Ctrl-C during a motion FREEZES AND HOLDS —
-it does not home. Press 'h' afterwards to home at 25% speed.
+ARM MOTIONS ARE NO LONGER INDIVIDUALLY GATED (user override). A motion runs when
+its beat's logic decides to run it — which now includes running in response to a
+SPOKEN REPLY in beat 2. SPACE still gates the start of every step, and the
+terminal prints a red ">>> ARM MOVING NOW <<<" banner immediately before any
+motion. Ctrl-C during a motion FREEZES AND HOLDS — it does not home. Press 'h'
+afterwards to home at 25% speed. Keep the workspace clear for the whole demo,
+not just around the keypresses.
+
+HUMAN-IN-THE-LOOP RESOLUTION (beats 2 and 3). The point is ambiguity that YOU
+resolve out loud, not the robot merely declining:
+    beat 2  it asks majority-vs-outlier, then WAITS for your reply.
+            "go on" / "yes" / "majority" / "continue"  -> it executes the motion
+            "stop" / "no" / "wait" / "hold"            -> it holds and says
+                                                          "Holding. 9 demonstrations
+                                                           remain unexecuted."
+    beat 3  after the refusal it listens once more. Tell it to "go on" or "try
+            anyway" and it restates the boundary and STILL does not move:
+            "I have zero demonstrations of do a bottle flip. I will not attempt it."
+            Say "stop" (or nothing recognizable twice) and it moves to beat 4.
+Replies are classified by token overlap against two fixed word sets — no LLM. A
+reply matching both sets or neither is treated as unrecognized: the robot says it
+did not understand and re-listens, twice, then switches to a typed prompt. When
+intent is unclear it asks again rather than guessing and moving.
 
 SAY OUT LOUD, EARLY (the state machine prints this too, at start):
     "The sentences are fixed templates. Every number inside them is computed
@@ -127,6 +148,17 @@ class State:
         self.no_audio = args.no_audio
         self.transcript = []
         self.panel_proc = None
+        self.sim_arm = args.sim_arm
+        # Rehearsal-only scripted replies, keyed by the capture label. This is how
+        # --rehearse walks BOTH the negative and affirmative resolution branches
+        # (and the unrecognized-retry path) through the same --text code path the
+        # stage fallback uses.
+        self.scripted = {
+            "beat2-reply": "mmhrgh",          # unrecognized -> robot re-asks
+            "beat2-reply1": "stop",           # negative     -> arm holds
+            "beat2b-reply": "go on",          # affirmative  -> arm executes
+            "beat3-reply": "go on",           # affirmative  -> restates the boundary
+        }
         # BEAT 3's exact transcript string is reused verbatim as BEAT 4's ingest
         # --task and as the --include-live query. feedback/live_index.json is keyed
         # on the raw query string, so anything less than verbatim reuse silently
@@ -210,7 +242,7 @@ def capture_query(st, expected, label):
     identical code path, which is why the stage fallback costs nothing."""
     cmd = [PY, str(REPO_ROOT / "listen" / "transcribe.py")]
     if st.text_mode:
-        typed = expected
+        typed = st.scripted.get(label, expected) if st.rehearse else expected
         if not st.rehearse:
             say(f"{DIM}  typed-input mode. Enter overrides; blank uses {expected!r}{OFF}")
             try:
@@ -252,8 +284,62 @@ def decide(st, query, label, include_live=False):
     return path, decision
 
 
-def speak(st, decision_path, label):
+AFFIRMATIVE = {
+    "go", "ahead", "yes", "yeah", "yep", "majority", "continue", "proceed",
+    "ok", "okay", "sure", "affirmative", "try", "anyway", "do",
+}
+NEGATIVE = {
+    "stop", "no", "nope", "wait", "hold", "cancel", "abort", "halt",
+    "negative", "don't", "dont", "never",
+}
+
+
+def classify_reply(text):
+    """Computed intent match, no LLM. Token overlap against two fixed word sets.
+
+    A reply that hits BOTH sets ("don't go on") or NEITHER is unrecognized on
+    purpose — the safe default when the human's intent is unclear is to ask
+    again, not to guess and move an arm.
+    """
+    tokens = {
+        "".join(c for c in w if c.isalpha() or c == "'")
+        for w in (text or "").lower().split()
+    }
+    tokens.discard("")
+    aff = tokens & AFFIRMATIVE
+    neg = tokens & NEGATIVE
+    if aff and not neg:
+        return "affirmative", sorted(aff)
+    if neg and not aff:
+        return "negative", sorted(neg)
+    return "unrecognized", sorted(aff | neg)
+
+
+def resolve_with_human(st, expected, label, max_retries=2):
+    """Capture a spoken reply and classify it. Retries on an unrecognized reply,
+    then falls back to a typed prompt. Returns 'affirmative' or 'negative'."""
+    for attempt in range(max_retries + 1):
+        reply = capture_query(st, expected, f"{label}-reply{attempt or ''}")
+        verdict, hits = classify_reply(reply or "")
+        say(f"{DIM}  reply {reply!r} -> {verdict}"
+            f"{' on ' + ', '.join(hits) if hits else ''}{OFF}")
+        st.log(f"{label} reply {reply!r} -> {verdict} (matched {hits})")
+        if verdict != "unrecognized":
+            return verdict
+        if attempt < max_retries:
+            say(f"{YEL}  robot: \"I did not understand that. Stop, or go on?\"{OFF}")
+        else:
+            say(f"{YEL}  two retries used — switching to typed input for this reply{OFF}")
+            st.text_mode = True
+    reply = capture_query(st, expected, f"{label}-reply-typed")
+    verdict, _ = classify_reply(reply or "")
+    return "negative" if verdict != "affirmative" else "affirmative"
+
+
+def speak(st, decision_path, label, template=None):
     cmd = [PY, str(REPO_ROOT / "voice" / "speak.py"), str(decision_path)]
+    if template:
+        cmd += ["--template", template]
     if st.no_audio:
         cmd.append("--no-audio")
     t0 = time.time()
@@ -295,10 +381,25 @@ def close_panel(st):
 
 
 def arm_motion(st, kind, name, seconds):
-    """kind is 'gesture' or 'replay'. Gated by its own keypress upstream."""
+    """kind is 'gesture' or 'replay'.
+
+    Per user override, motions are NO LONGER gated on their own keypress — the
+    beat's logic decides when they run (including in response to a spoken reply).
+    Ctrl-C freeze-and-hold remains the e-stop, so the banner below is printed
+    immediately before any motion starts.
+    """
+    if st.sim_arm:
+        say(f"{DIM}  [sim-arm] would run {kind} {name} (~{seconds}s) — "
+            f"hardware not commanded{OFF}")
+        st.log(f"arm {kind} {name}: SKIPPED (--sim-arm)")
+        time.sleep(0.1)
+        return
+
     from arm import arm_io
     from arm.safety import ArmFrozen, MotionAborted
 
+    say(f"{RED}{BOLD}  >>> ARM MOVING NOW: {kind} {name} (~{seconds}s) — "
+        f"Ctrl-C freezes and holds <<<{OFF}")
     say(f"{YEL}  arm: {kind} {name} (~{seconds}s, {arm_io.backend_name()}){OFF}")
     t0 = time.time()
     try:
@@ -404,10 +505,9 @@ def beat1(st):
     if got is None:
         return
     path, dec = got
-    step(st, f"replay task_demo — the arm acts, silently (~19.4s)",
-         lambda: arm_motion(st, "replay", "task_demo", 19.4), is_motion=True)
-    step(st, "speak (act tier speaks nothing) + evidence screen",
-         lambda: (speak(st, path, "beat1"), panel(st, path, "beat1")))
+    step(st, "the arm acts, silently — replay task_demo (~19.4s), then evidence screen",
+         lambda: (arm_motion(st, "replay", "task_demo", 19.4),
+                  speak(st, path, "beat1"), panel(st, path, "beat1")))
 
 
 def beat2(st):
@@ -420,18 +520,29 @@ def beat2(st):
     if got is None:
         return
     path, dec = got
-    step(st, "gesture 'attention' — it wants your input before it moves (~3.4s)",
-         lambda: arm_motion(st, "gesture", "attention", 3.4), is_motion=True)
-    step(st, "ask the question + evidence screen (8 vs 1, silhouette and p)",
-         lambda: (speak(st, path, "beat2"), panel(st, path, "beat2")))
+    step(st, "gesture 'attention', ask the question, show the split (8 vs 1, silhouette, p)",
+         lambda: (arm_motion(st, "gesture", "attention", 3.4),
+                  speak(st, path, "beat2"), panel(st, path, "beat2")))
     say(f"{DIM}  Say out loud: p is 0.11. With 9 clips it cannot rule out chance, and it "
         f"says so rather than dressing up a k=2 split as a finding.{OFF}")
-    step(st, "operator answers ('follow the majority')",
-         lambda: capture_query(st, "follow the majority", "beat2-answer"))
-    say(f"{DIM}  Say out loud: strategy selection is real; the arm's repertoire is one "
-        f"trajectory. Same replay as beat 1, honestly.{OFF}")
-    step(st, "replay task_demo for the chosen strategy (~19.4s)",
-         lambda: arm_motion(st, "replay", "task_demo", 19.4), is_motion=True)
+    _resolve_ask(st, path, "beat2")
+
+    if st.rehearse:
+        # Rehearsal-only: walk the OTHER branch too, so one pass proves both.
+        say(f"{DIM}  [rehearse] replaying the resolution on the affirmative branch{OFF}")
+        _resolve_ask(st, path, "beat2b")
+
+
+def _resolve_ask(st, path, label):
+    """The ambiguity is resolved by the human, out loud. Stop or go on."""
+    verdict = resolve_with_human(st, "go on", label)
+    if verdict == "affirmative":
+        say(f"{DIM}  Say out loud: strategy selection is real; the arm's repertoire is "
+            f"one trajectory. Same replay as beat 1, honestly.{OFF}")
+        arm_motion(st, "replay", "task_demo", 19.4)
+    else:
+        say(f"{GRN}  human said stop — the arm holds and does not execute{OFF}")
+        speak(st, path, f"{label}-hold", template="ask_hold")
 
 
 def beat3(st):
@@ -448,13 +559,25 @@ def beat3(st):
     if dec["tier"] != "abstain":
         say(f"{RED}  *** tier is {dec['tier']}, expected abstain. This is the "
             f"stop-the-line case. ***{OFF}")
-    step(st, "gesture 'decline' (~7.4s)",
-         lambda: arm_motion(st, "gesture", "decline", 7.4), is_motion=True)
-    step(st, "speak the refusal + evidence screen (coverage, uncovered word, nearest tasks)",
-         lambda: (speak(st, path, "beat3"), panel(st, path, "beat3")))
+    step(st, "gesture 'decline' (~7.4s), speak the refusal, show the coverage panel",
+         lambda: (arm_motion(st, "gesture", "decline", 7.4),
+                  speak(st, path, "beat3"), panel(st, path, "beat3")))
     say(f"{DIM}  Say out loud: it checks whether every word in the request is something it "
         f"has seen, not whether the sentence looks similar. 'flip' appears in zero of the "
         f"50 task names.{OFF}")
+
+    def _push_back():
+        verdict = resolve_with_human(st, "go on", "beat3")
+        if verdict == "affirmative":
+            # Pushed to try anyway. The boundary does not move — and crucially the
+            # arm does NOT execute here. This is the honesty centerpiece.
+            speak(st, path, "beat3-restate", template="abstain_restate")
+            say(f"{DIM}  Say out loud: it was told to try anyway and still did not. "
+                f"Zero demonstrations is not a confidence problem, it is a data problem.{OFF}")
+        else:
+            say(f"{GRN}  human accepted the refusal — moving on{OFF}")
+
+    step(st, "push back: tell it to go on anyway, and watch the boundary hold", _push_back)
 
 
 def beat4(st):
@@ -470,10 +593,9 @@ def beat4(st):
     if not n_live:
         say(f"{RED}  live_index had no entry for {q!r} — beat 4 will speak the plain "
             f"abstain. (ingest --task must use this exact string.){OFF}")
-    step(st, "gesture 'point_screen' at the measured stats (~7.4s)",
-         lambda: arm_motion(st, "gesture", "point_screen", 7.4), is_motion=True)
-    step(st, "speak the post-feedback refusal + evidence screen",
-         lambda: (speak(st, path, "beat4"), panel(st, path, "beat4")))
+    step(st, "gesture 'point_screen' (~7.4s), speak the post-feedback refusal, show the panel",
+         lambda: (arm_motion(st, "gesture", "point_screen", 7.4),
+                  speak(st, path, "beat4"), panel(st, path, "beat4")))
     say()
     say(f"{BOLD}  CLOSE: \"More data changed what I know, not what I can do. "
         f"That is the honest boundary.\"{OFF}")
@@ -491,18 +613,35 @@ def main():
     ap.add_argument("--beat", type=int, default=1, help="start at this beat (1-4)")
     ap.add_argument("--rehearse", action="store_true",
                     help="drive all 4 beats through --text non-interactively")
+    ap.add_argument("--sim-arm", action="store_true",
+                    help="print what the arm would do instead of commanding it "
+                         "(auto-enabled by --rehearse when the backend is real hardware)")
     args = ap.parse_args()
+
+    # A rehearsal must never command a live arm as a side effect. arm/ picks its
+    # backend from FACTS.md HARDWARE_PRESENT at import, and that flag is now 'yes',
+    # so --rehearse stubs the motions unless the operator explicitly opts in.
+    if args.rehearse and not args.sim_arm:
+        from arm import facts as _facts
+        if _facts.hardware_present():
+            args.sim_arm = True
 
     st = State(args)
     DECISION_DIR.mkdir(parents=True, exist_ok=True)
     PANEL_DIR.mkdir(parents=True, exist_ok=True)
 
-    from arm import arm_io
-
     banner("I DON'T KNOW HOW TO DO THAT YET")
-    d = arm_io.describe()
-    say(f"  arm backend : {d['backend']}  (simulated={d['simulated']}, "
-        f"FACTS HARDWARE_PRESENT={d['hardware_present_facts']})")
+    if st.sim_arm:
+        say(f"  arm backend : {YEL}STUBBED (--sim-arm){OFF} — no motion will be commanded")
+    else:
+        from arm import arm_io
+        d = arm_io.describe()
+        say(f"  arm backend : {d['backend']}  (simulated={d['simulated']}, "
+            f"FACTS HARDWARE_PRESENT={d['hardware_present_facts']})")
+        if not d["simulated"]:
+            say(f"{RED}{BOLD}  REAL ARM. Motions are NOT individually gated: they run when "
+                f"the beat decides, including in response to a spoken reply.{OFF}")
+            say(f"{RED}  Ctrl-C freezes and holds. Keep the workspace clear.{OFF}")
     say(f"  input mode  : {'TYPED' if st.text_mode else 'SPOKEN (listen/transcribe.py)'}")
     say(f"  sim render  : ARM_SIM_RENDER={os.environ.get('ARM_SIM_RENDER')} "
         f"(0 = no per-motion GIF, stills already in arm/sim_out/)")
@@ -533,6 +672,9 @@ def main():
 
 
 def _home(st):
+    if st.sim_arm:
+        say(f"{DIM}  [sim-arm] would home — hardware not commanded{OFF}")
+        return
     from arm import arm_io
     t0 = time.time()
     arm_io.home()

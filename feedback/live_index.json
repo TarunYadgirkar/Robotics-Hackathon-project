@@ -6,21 +6,21 @@
     "takes": [
       {
         "detection_rate": 0.0,
-        "file": "feedback/live_corpus/do_a_bottle_flip/do_a_bottle_flip_rehearse_1788121310_1.parquet",
+        "file": "feedback/live_corpus/do_a_bottle_flip/do_a_bottle_flip_rehearse_1788122408_1.parquet",
         "grip_aperture_range": 0.0,
         "mean_speed": 0.0,
         "n_frames": 10
       },
       {
         "detection_rate": 0.0,
-        "file": "feedback/live_corpus/do_a_bottle_flip/do_a_bottle_flip_rehearse_1788121310_2.parquet",
+        "file": "feedback/live_corpus/do_a_bottle_flip/do_a_bottle_flip_rehearse_1788122409_2.parquet",
         "grip_aperture_range": 0.0,
         "mean_speed": 0.0,
         "n_frames": 10
       },
       {
         "detection_rate": 0.0,
-        "file": "feedback/live_corpus/do_a_bottle_flip/do_a_bottle_flip_rehearse_1788121310_3.parquet",
+        "file": "feedback/live_corpus/do_a_bottle_flip/do_a_bottle_flip_rehearse_1788122409_3.parquet",
         "grip_aperture_range": 0.0,
         "mean_speed": 0.0,
         "n_frames": 10

@@ -66,6 +66,15 @@ TEMPLATES = {
         "follow the majority, or does the outlier matter?"
     ),
     "act": "",  # act-silent: speaks nothing, per the frozen contract
+    # Human-in-the-loop resolution templates (added by Agent F for the amended
+    # BEAT 2/3 flow). Both are slot-compatible with the existing
+    # utterance_slots: 'ask_hold' reuses the ask tier's n_clips, and
+    # 'abstain_restate' reuses the abstain tier's query. No new slot is
+    # required from brain/decide.py. Selected via --template, never inferred.
+    "ask_hold": "Holding. {n_clips} demonstrations remain unexecuted.",
+    "abstain_restate": (
+        "I have zero demonstrations of {query}. I will not attempt it."
+    ),
 }
 
 
@@ -85,8 +94,10 @@ def pick_template_name(decision):
     raise ValueError(f"unknown tier in decision JSON: {tier!r}")
 
 
-def render(decision):
-    name = pick_template_name(decision)
+def render(decision, template_name=None):
+    name = template_name or pick_template_name(decision)
+    if name not in TEMPLATES:
+        raise ValueError(f"unknown template {name!r}; expected one of {sorted(TEMPLATES)}")
     template = TEMPLATES[name]
     if not template:
         return "", name
@@ -187,10 +198,13 @@ def main():
     ap.add_argument("decision_json", help="path to a decision JSON from brain/decide.py")
     ap.add_argument("--no-audio", action="store_true",
                      help="render + print text only, skip TTS playback (used by smoke tests)")
+    ap.add_argument("--template", choices=sorted(TEMPLATES),
+                     help="force a template instead of inferring it from the tier "
+                          "(used by the human-in-the-loop resolution beats)")
     args = ap.parse_args()
 
     decision = json.loads(Path(args.decision_json).read_text())
-    text, template_name = render(decision)
+    text, template_name = render(decision, template_name=args.template)
 
     # Frozen contract: always print the exact text spoken (empty for act-silent).
     print(text)
