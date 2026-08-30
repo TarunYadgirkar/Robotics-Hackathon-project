@@ -273,6 +273,11 @@ class YamBackend:
 
         self._target_rad = list(state.positions)
         self._gripper_pct = model.gripper_rad_to_percent(state.positions[-1])
+        # the pose the arm physically rests in is legal by definition; how far
+        # outside a bound it sits varies per power-up (j3 has read -0.054 deg)
+        self._rest_channels = tuple(
+            math.degrees(r) for r in state.positions[:6]
+        ) + (self._gripper_pct,)
 
         from hwsupport.keepalive import Keepalive
 
@@ -407,7 +412,7 @@ class YamBackend:
 
     def send(self, t: float, positions: tuple[float, ...]) -> None:
         self._raise_if_faulted()
-        violations = model.check_limits(positions)
+        violations = model.check_limits(positions, base=getattr(self, "_rest_channels", None))
         if violations:
             raise HardwareMotionRefused("refusing out-of-limit pose: " + "; ".join(violations))
         with self._target_lock:
