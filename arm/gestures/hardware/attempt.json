@@ -1,17 +1,110 @@
 {
   "schema_version": 1,
   "name": "attempt",
-  "source": "hardware-authored (relative, whole-arm)",
+  "source": "hardware-authored (relative, whole-arm, joint1 locked)",
   "frame": "relative",
-  "notes": "HARDWARE GESTURE, new for the 'told how, now try it' beat (Agent F's flow). Offsets from the resting pose. LOOKS LIKE: the arm commits to a try — it leans in and reaches down with joint4 pitched well over, closes the jaws, lifts a little as if testing whether it has the thing, then lets go and withdraws. The small lift is the point: it is the part that looks like checking, which is what makes the motion read as an attempt rather than a rehearsed success. It is honest about what it is — nothing was taught from a demonstration and there is no perception in the loop, so the arm is trying a shape of motion, not verifying a grasp. Peak 8.5 deg/s (ceiling 15), gripper 11.0 %/s (limit 12).",
-  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "notes": "For the 'told how, now try it' beat. LOOKS LIKE: the arm commits \u2014 rises, reaches well out and down (joint4 to -44), closes the jaws, then LIFTS 8 deg as if testing whether it got the thing, lets go, and withdraws. The test lift is the point: it reads as trying, not as succeeding. Nothing was taught from a demonstration and there is no perception in the loop, so it is trying a shape of motion, not verifying a grasp. Peak 13.3 deg/s. JOINT1 IS ZERO IN EVERY WAYPOINT. Operator instruction at the arm: there are clamps on the sides of the base, so the base does not turn \u2014 the collision model cannot see those clamps, so the person standing there is the authority. hw_backend refuses any stream moving joint1 more than 2 deg. All expressiveness is joint2-joint6 plus the jaws. Positions are OFFSETS from whatever pose the arm is resting in. Full-range revision, authorized 2026-08-30 ('i want you to fully use the arm not just slightly move it'); budgets are measured with arm/measure_range.py and every stream is MuJoCo self-collision-verified before a frame is sent.",
+  "joint_names": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "gripper"
+  ],
   "units": "deg (joint1-joint6), percent_open (gripper)",
   "waypoints": [
-    {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
-    {"t": 2.6, "positions": [-14.0, 10.0, 18.0, -22.0, 12.0, -10.0, 0.0], "label": "lean in and reach down"},
-    {"t": 4.6, "positions": [-14.0, 10.0, 18.0, -22.0, 12.0, -10.0, -22.0], "label": "close on it"},
-    {"t": 5.8, "positions": [-14.0, 10.0, 22.0, -22.0, 12.0, -10.0, -22.0], "label": "test lift — did I get it?"},
-    {"t": 8.0, "positions": [-14.0, 10.0, 18.0, -22.0, 12.0, -10.0, 0.0], "label": "let go"},
-    {"t": 10.6, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "withdraw to resting pose"}
+    {
+      "t": 0.0,
+      "positions": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "label": "resting pose"
+    },
+    {
+      "t": 3.0,
+      "positions": [
+        0.0,
+        12.0,
+        40.0,
+        -38.0,
+        10.0,
+        0.0,
+        0.0
+      ],
+      "label": "rise and reach out"
+    },
+    {
+      "t": 5.0,
+      "positions": [
+        0.0,
+        12.0,
+        34.0,
+        -44.0,
+        10.0,
+        0.0,
+        0.0
+      ],
+      "label": "lower onto it"
+    },
+    {
+      "t": 7.0,
+      "positions": [
+        0.0,
+        12.0,
+        34.0,
+        -44.0,
+        10.0,
+        0.0,
+        -22.0
+      ],
+      "label": "close on it"
+    },
+    {
+      "t": 8.5,
+      "positions": [
+        0.0,
+        12.0,
+        42.0,
+        -44.0,
+        10.0,
+        0.0,
+        -22.0
+      ],
+      "label": "test lift \u2014 did I get it?"
+    },
+    {
+      "t": 10.7,
+      "positions": [
+        0.0,
+        12.0,
+        42.0,
+        -44.0,
+        10.0,
+        0.0,
+        0.0
+      ],
+      "label": "let go"
+    },
+    {
+      "t": 14.0,
+      "positions": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "label": "withdraw"
+    }
   ]
 }

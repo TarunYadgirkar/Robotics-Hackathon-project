@@ -17,7 +17,8 @@ _GESTURE_ROOT = Path(__file__).resolve().parent / "gestures"
 #: "attempt" is the newest, for the beat where the robot is told how and tries
 #: it. Added to the frozen set rather than smuggled in as a replay path so
 #: callers keep using gesture(name) for everything expressive.
-GESTURE_NAMES = ("attention", "decline", "point_screen", "attempt")
+#: "wake" is the startup showcase, played once when the demo opens.
+GESTURE_NAMES = ("wake", "attention", "decline", "point_screen", "attempt")
 
 APPROACH_LEAD_S = 0.6  # nominal move-to-start time; the cap stretches it if needed
 POSE_TOLERANCE_DEG = 0.5

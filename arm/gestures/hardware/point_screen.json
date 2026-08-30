@@ -1,15 +1,71 @@
 {
   "schema_version": 1,
   "name": "point_screen",
-  "source": "hardware-authored (relative, whole-arm)",
+  "source": "hardware-authored (relative, whole-arm, joint1 locked)",
   "frame": "relative",
-  "notes": "HARDWARE GESTURE TABLE, whole-arm revision. Offsets from the resting pose. LOOKS LIKE: the arm turns 25 deg toward the screen side, lifts and extends — joint3 up, joint4 pitched down so the forearm points rather than rears back — rolls the wrist to line up with the display, and holds there for 2 seconds while the numbers are read, then returns. This one genuinely points now; the gripper-only version did not. Peak 7.1 deg/s (ceiling 15).",
-  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "notes": "LOOKS LIKE: instead of turning to the screen, the arm rears up and reaches out toward it \u2014 joint3 to 48, forearm extended to -42, wrist rolled 20 deg to line up \u2014 and HOLDS for 2 seconds while the numbers are read. The pointing is the extension, not a yaw. Peak 13.7 deg/s. JOINT1 IS ZERO IN EVERY WAYPOINT. Operator instruction at the arm: there are clamps on the sides of the base, so the base does not turn \u2014 the collision model cannot see those clamps, so the person standing there is the authority. hw_backend refuses any stream moving joint1 more than 2 deg. All expressiveness is joint2-joint6 plus the jaws. Positions are OFFSETS from whatever pose the arm is resting in. Full-range revision, authorized 2026-08-30 ('i want you to fully use the arm not just slightly move it'); budgets are measured with arm/measure_range.py and every stream is MuJoCo self-collision-verified before a frame is sent.",
+  "joint_names": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "gripper"
+  ],
   "units": "deg (joint1-joint6), percent_open (gripper)",
   "waypoints": [
-    {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
-    {"t": 3.5, "positions": [25.0, 8.0, 16.0, -18.0, -20.0, 22.0, 0.0], "label": "turn and point at the screen"},
-    {"t": 5.5, "positions": [25.0, 8.0, 16.0, -18.0, -20.0, 22.0, 0.0], "label": "hold on the numbers"},
-    {"t": 9.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "back to resting pose"}
+    {
+      "t": 0.0,
+      "positions": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "label": "resting pose"
+    },
+    {
+      "t": 3.5,
+      "positions": [
+        0.0,
+        12.0,
+        48.0,
+        -42.0,
+        0.0,
+        20.0,
+        0.0
+      ],
+      "label": "rear up and reach toward the screen"
+    },
+    {
+      "t": 5.5,
+      "positions": [
+        0.0,
+        12.0,
+        48.0,
+        -42.0,
+        0.0,
+        20.0,
+        0.0
+      ],
+      "label": "hold on the numbers"
+    },
+    {
+      "t": 9.0,
+      "positions": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "label": "back to rest"
+    }
   ]
 }

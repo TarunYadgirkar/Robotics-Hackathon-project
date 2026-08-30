@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "name": "wake",
+  "source": "sim-authored",
+  "notes": "SIM counterpart of the hardware 'wake' startup showcase, so an ARM_FORCE_SIM=1 rehearsal opens on the same beat. Absolute poses around the sim home. Choreography, not a task: it shows range of motion and implies no capability.",
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {"t": 0.0, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "asleep at rest"},
+    {"t": 3.2, "positions": [2.854, 10.0, 22.0, -23.19, -3.795, 73.07, 20.0], "label": "slow rise"},
+    {"t": 6.2, "positions": [-22.15, 10.0, 22.0, -23.19, -3.795, 55.07, 20.0], "label": "look left"},
+    {"t": 10.0, "positions": [27.85, 10.0, 22.0, -23.19, -3.795, 81.07, 20.0], "label": "look right"},
+    {"t": 12.8, "positions": [2.854, 12.0, 24.0, -33.19, 22.205, 81.07, 20.0], "label": "centre and stretch"},
+    {"t": 15.0, "positions": [2.854, 12.0, 24.0, -33.19, 22.205, 95.07, 6.0], "label": "wrist roll, jaws close"},
+    {"t": 17.2, "positions": [2.854, 12.0, 24.0, -33.19, 22.205, 67.07, 20.0], "label": "unroll, jaws open"},
+    {"t": 20.6, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "settle facing the operator"}
+  ]
+}

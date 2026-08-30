@@ -1,16 +1,110 @@
 {
   "schema_version": 1,
   "name": "attention",
-  "source": "hardware-authored (relative, whole-arm)",
+  "source": "hardware-authored (relative, whole-arm, joint1 locked)",
   "frame": "relative",
-  "notes": "HARDWARE GESTURE TABLE, whole-arm revision. Positions are OFFSETS from whatever pose the arm is resting in. Authorized 2026-08-30 by the user at the arm ('you can move the whole arm but do it slow and dont hit anything') after the earlier gripper-only version read as the arm doing nothing. LOOKS LIKE: the arm turns its base toward the operator, lifts on joint3 with a small shoulder set on joint2, cocks the wrist over, and gives one clamp of the jaws before settling back. joint2 stays at 10 deg against its ~105 deg base-collision trap; joint3 does the lifting, which yam.arm records as self-collision-free from home. Peak 5.7 deg/s, well under the 15 deg/s slow ceiling; gripper 11.1 %/s under its 12 %/s limit.",
-  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "notes": "LOOKS LIKE: the arm lifts sharply out of rest (joint3 +35), pitches the forearm forward, then NODS \u2014 dips and rises on joint3/joint4 \u2014 and gives one clamp of the jaws before settling. The nod is what reads as 'I want you' without the base turning. Peak 14 deg/s. JOINT1 IS ZERO IN EVERY WAYPOINT. Operator instruction at the arm: there are clamps on the sides of the base, so the base does not turn \u2014 the collision model cannot see those clamps, so the person standing there is the authority. hw_backend refuses any stream moving joint1 more than 2 deg. All expressiveness is joint2-joint6 plus the jaws. Positions are OFFSETS from whatever pose the arm is resting in. Full-range revision, authorized 2026-08-30 ('i want you to fully use the arm not just slightly move it'); budgets are measured with arm/measure_range.py and every stream is MuJoCo self-collision-verified before a frame is sent.",
+  "joint_names": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "gripper"
+  ],
   "units": "deg (joint1-joint6), percent_open (gripper)",
   "waypoints": [
-    {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
-    {"t": 3.5, "positions": [18.0, 10.0, 18.0, -12.0, -10.0, 12.0, 0.0], "label": "turn to operator, lift, cock wrist"},
-    {"t": 5.3, "positions": [18.0, 10.0, 18.0, -12.0, -10.0, 12.0, -20.0], "label": "clamp"},
-    {"t": 7.1, "positions": [18.0, 10.0, 20.0, -14.0, -10.0, 12.0, 0.0], "label": "release, settle higher"},
-    {"t": 10.6, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "back to resting pose"}
+    {
+      "t": 0.0,
+      "positions": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "label": "resting pose"
+    },
+    {
+      "t": 2.5,
+      "positions": [
+        0.0,
+        10.0,
+        35.0,
+        -22.0,
+        0.0,
+        15.0,
+        0.0
+      ],
+      "label": "lift and face forward"
+    },
+    {
+      "t": 4.0,
+      "positions": [
+        0.0,
+        10.0,
+        30.0,
+        -32.0,
+        0.0,
+        15.0,
+        0.0
+      ],
+      "label": "nod down"
+    },
+    {
+      "t": 5.5,
+      "positions": [
+        0.0,
+        10.0,
+        35.0,
+        -22.0,
+        0.0,
+        15.0,
+        0.0
+      ],
+      "label": "nod up"
+    },
+    {
+      "t": 7.5,
+      "positions": [
+        0.0,
+        10.0,
+        35.0,
+        -22.0,
+        0.0,
+        15.0,
+        -22.0
+      ],
+      "label": "clamp"
+    },
+    {
+      "t": 9.5,
+      "positions": [
+        0.0,
+        10.0,
+        35.0,
+        -22.0,
+        0.0,
+        15.0,
+        0.0
+      ],
+      "label": "release"
+    },
+    {
+      "t": 12.5,
+      "positions": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "label": "back to rest"
+    }
   ]
 }

@@ -48,8 +48,24 @@ class HardwareMotionRefused(RuntimeError):
     pass
 
 
-class ArmUnhealthy(RuntimeError):
-    pass
+class ArmUnavailable(RuntimeError):
+    """The arm cannot be commanded and one automatic recovery has already failed.
+
+    This is the ONE exception the demo layer needs to catch to keep the show
+    running without motion. It is raised within a bounded time (see
+    RECOVERY_BUDGET_S) — never after a hang — and it is terminal for the session:
+    by the time it is raised, the in-place recovery H2's triage prescribes has
+    been tried once and did not work, so the remaining fixes are physical.
+    """
+
+
+#: Kept as an alias so older call sites and status files still resolve. Any
+#: "the arm is not usable" condition is one exception now.
+ArmUnhealthy = ArmUnavailable
+
+#: Hard ceiling on one recovery attempt. The demo cannot wait on a dead bus, so
+#: this is deliberately shorter than any human would tolerate on stage.
+RECOVERY_BUDGET_S = 5.0
 
 
 def verify_against_yam() -> None:
@@ -124,6 +140,18 @@ def validate_hardware_motion(setpoints, label: str) -> dict:
     for _, positions in setpoints:
         for i, name in enumerate(model.ARM_JOINT_NAMES):
             worst_excursion[name] = max(worst_excursion[name], abs(positions[i] - start[i]))
+
+    # joint1 first and on its own: this one is not a tunable budget, it is a
+    # physical constraint the collision model cannot see (clamps on the sides of
+    # the base). Checked explicitly so it cannot be widened by a config edit or
+    # loosened by a checker PASS.
+    if worst_excursion["joint1"] > model.HW_JOINT1_LOCKED_DEG:
+        raise HardwareMotionRefused(
+            f"{label}: refused — joint1 would rotate {worst_excursion['joint1']:.1f} deg. The base "
+            f"is LOCKED to {model.HW_JOINT1_LOCKED_DEG} deg: there are clamps on the sides of the "
+            "base that are not in the collision model, and the operator's instruction is that the "
+            "base does not turn. Express the gesture with joint2-joint6 and the gripper instead."
+        )
 
     offenders = {
         n: v for n, v in worst_excursion.items() if v > model.hw_excursion_limit(n)
@@ -321,6 +349,7 @@ class YamBackend:
         self._streaming = False
         self._keepalive = None
         self._recovery_used = False
+        self._bus_recovery_used = False
         self._fault: BaseException | None = None
         self.validation: dict | None = None
         self._ticks = 0
@@ -359,7 +388,22 @@ class YamBackend:
     def connect(self) -> None:
         verify_against_yam()
         verify_cap_against_driver(self.control_hz())
+        try:
+            self._connect_once()
+        except Exception as exc:
+            if not isinstance(exc, self._bus_error_types()):
+                raise
+            if self._arm is not None and self._recover_bus_once(exc):
+                self._after_enable(self._arm.read_state())
+                return
+            raise ArmUnavailable(
+                f"the arm could not be brought up: {type(exc).__name__}: {exc}. One in-place "
+                "recovery was attempted and did not restore it. Check the CANable's USB cable and "
+                "the arm's power, then run `.venv/bin/python arm/precheck.py`. The demo can "
+                "continue without motion."
+            ) from exc
 
+    def _connect_once(self) -> None:
         self.open_bus()
         stale = self._arm.recover_stale_motors()
         if stale:
@@ -367,7 +411,9 @@ class YamBackend:
 
         state = self._arm.enable()
         print("[HW] enabled:\n" + state.describe(), file=sys.stderr)
+        self._after_enable(state)
 
+    def _after_enable(self, state) -> None:
         self._target_rad = list(state.positions)
         self._gripper_pct = model.gripper_rad_to_percent(state.positions[-1])
         # the pose the arm physically rests in is legal by definition; how far
@@ -375,6 +421,8 @@ class YamBackend:
         self._rest_channels = tuple(
             math.degrees(r) for r in state.positions[:6]
         ) + (self._gripper_pct,)
+        if self._keepalive is not None and self._keepalive.is_running:
+            return
 
         from hwsupport.keepalive import Keepalive
 
@@ -386,6 +434,68 @@ class YamBackend:
 
     def _note_fault(self, exc: BaseException) -> None:
         self._fault = exc
+
+    def _recover_bus_once(self, exc: BaseException) -> bool:
+        """One in-place bus recovery, bounded by RECOVERY_BUDGET_S. Never twice.
+
+        Implements H2's triage for "CAN bus dies mid-session": rebuild the bus
+        object in place and see whether a FRESH handle gets replies. If it does,
+        the host's controller had gone bus-off and the arm was fine all along —
+        which on macOS is the failure that masquerades as "the CANable needs a
+        replug". If the fresh handle also hears nothing, the arm is genuinely
+        unpowered or unplugged and no amount of software fixes it.
+        """
+        if self._bus_recovery_used or self._arm is None:
+            return False
+        self._bus_recovery_used = True
+        deadline = time.monotonic() + RECOVERY_BUDGET_S
+        print(f"\n[HW] {type(exc).__name__}: attempting ONE in-place bus recovery "
+              f"(budget {RECOVERY_BUDGET_S:.0f}s)", file=sys.stderr)
+
+        from yam.dm_motor import encode_mit_command
+
+        try:
+            self._arm.reconnect()
+        except Exception as reconnect_error:
+            print(f"[HW] recovery failed: fresh bus would not open ({reconnect_error})", file=sys.stderr)
+            return False
+        if time.monotonic() > deadline:
+            print("[HW] recovery failed: out of budget after reopening the bus", file=sys.stderr)
+            return False
+
+        joint = self._arm.joints[0]
+        try:
+            self._arm._exchange(
+                joint, encode_mit_command(joint.spec, position=0.0, kp=0.0, kd=0.0, torque=0.0),
+                retries=2,
+            )
+        except Exception:
+            print("[HW] recovery failed: a fresh bus handle hears nothing from the arm — this is "
+                  "the arm being unpowered or unplugged, not a host-side bus-off", file=sys.stderr)
+            return False
+        if time.monotonic() > deadline:
+            return False
+
+        try:
+            self._arm.recover_stale_motors()
+            state = self._arm.enable()
+        except Exception as enable_error:
+            print(f"[HW] recovery failed at re-enable: {enable_error}", file=sys.stderr)
+            return False
+
+        with self._target_lock:
+            self._target_rad = list(state.positions)
+        print("[HW] recovered: fresh bus answered, motors re-enabled, holding again", file=sys.stderr)
+        return True
+
+    @staticmethod
+    def _bus_error_types():
+        import can
+        import usb.core
+
+        from yam.arm import MotorCommunicationError
+
+        return (can.CanError, usb.core.USBError, OSError, MotorCommunicationError)
 
     def _start_streaming(self) -> None:
         """Take the bus from the keepalive for the duration of one motion."""
@@ -426,6 +536,14 @@ class YamBackend:
             except (MotorCommunicationError, MotorFaultError) as exc:
                 is_comms_latch = isinstance(exc, MotorCommunicationError) or COMMS_LOST_TEXT in str(exc)
                 if not is_comms_latch or self._recovery_used:
+                    # Before giving up: if this looks like the bus rather than a
+                    # motor, spend the one in-place bus recovery. This is what
+                    # keeps a mid-demo dropout from ending the demo.
+                    if isinstance(exc, self._bus_error_types()) and not self._bus_recovery_used:
+                        with self._bus_lock:
+                            recovered = self._recover_bus_once(exc)
+                        if recovered:
+                            continue
                     why = "physical condition" if not is_comms_latch else "recovery pass already spent"
                     self._fault = exc
                     self._streaming = False
@@ -455,9 +573,10 @@ class YamBackend:
         if self._fault is None and self._keepalive is not None and self._keepalive.fault is not None:
             self._fault = self._keepalive.fault
         if self._fault is not None:
-            raise ArmUnhealthy(
-                f"arm reported {type(self._fault).__name__}: {self._fault}. Not retrying into it — "
-                "power-cycle or run scripts/diagnose.py --clear and re-check before any motion."
+            raise ArmUnavailable(
+                f"arm reported {type(self._fault).__name__}: {self._fault}. Automatic recovery is "
+                "spent, so it is not being retried into. Run `.venv/bin/python arm/precheck.py`; "
+                "the demo can continue without motion."
             ) from self._fault
 
     def shutdown(self) -> None:

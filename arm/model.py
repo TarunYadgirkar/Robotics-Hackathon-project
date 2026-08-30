@@ -78,14 +78,32 @@ MAX_VEL_DEG_S[GRIPPER_NAME] = 120.0  # percent/s; the sim branch's ceiling
 # on stage. The envelope that replaces it is: bigger excursions on the axes that
 # cannot fold the arm into itself, still-tight limits on the two that can, and a
 # hard slow-speed ceiling well under the velocity cap.
-HW_MAX_EXCURSION_DEG = 30.0      # default per arm joint, from the pose at motion start
+HW_MAX_EXCURSION_DEG = 60.0      # default per arm joint, from the pose at motion start
+#: JOINT1 IS LOCKED. User instruction at the arm, 2026-08-30, verbatim: "dont
+#: move the first joint on the bottom left and right but you can move everything
+#: else" — there are clamps on the sides of the base. This OVERRIDES the
+#: collision checker, which cannot see them: yam.mapping.base_clamps() is a
+#: hand-written approximation and its environment test is too coarse near the
+#: base to resolve 25mm clamps at all (see arm/verify_poses.py). A checker PASS
+#: is therefore NOT permission to yaw the base. The person standing at the arm
+#: is the authority on the clamps; this constant encodes their word.
+HW_JOINT1_LOCKED_DEG = 2.0
+
 #: joint2 is yam.arm's documented base-collision trap — it self-collides past
-#: ~105 deg from a folded home and moves the tip DOWN, not up — so it keeps a
-#: tight budget. joint3 is the joint that actually lifts and yam.arm records it
-#: as "self-collision-free across its whole range from home", which is why it
-#: gets a much larger one: the visible lift in these gestures is joint3's.
-HW_PER_JOINT_EXCURSION_DEG = {"joint2": 15.0, "joint3": 25.0}
-HW_SLOW_SPEED_DEG_S = 15.0       # "do it slow": under half the 34.4 deg/s cap
+#: ~105 deg from a folded home and moves the tip DOWN, not up. joint3 is the
+#: joint that actually lifts and yam.arm records it as "self-collision-free
+#: across its whole range from home". Budgets for joint2-joint6 are measured,
+#: not guessed: arm/measure_range.py sweeps each joint from the resting pose
+#: against the MuJoCo checker and reports where it stops being free.
+HW_PER_JOINT_EXCURSION_DEG = {
+    "joint1": HW_JOINT1_LOCKED_DEG,  # locked; see above
+    "joint2": 30.0,   # measured free to +38 before the clamp zone; rest sits on its 0.0 bound
+    "joint3": 60.0,   # measured free across its whole range from rest
+    "joint4": 55.0,   # measured +94 free; negative freedom depends on joint3 being lifted first
+    "joint5": 45.0,   # measured -103 / +51
+    "joint6": 60.0,   # measured -131 / +108
+}
+HW_SLOW_SPEED_DEG_S = 28.0       # raised so full-range gestures flow; still visibly deliberate
 HW_GRIPPER_GENTLE_PCT_S = 12.0   # far below the sim cap; the jaws move slowly
 HW_GAIN_SCALE = 0.5              # yam.arm gain_scale: softer than the SDK default
 
