@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "attention",
+  "source": "hardware-authored (relative, gripper-first)",
+  "frame": "relative",
+  "notes": "HARDWARE GESTURE TABLE. Positions are OFFSETS from whatever pose the arm is resting in when the motion starts. The operator's rule is that the arm stays essentially still and the motion is the jaws, so this is one slow clamp-and-release with 3 deg of joint6 (wrist roll, lightest joint) for visibility. Deltas CLOSE the jaws because this arm rests with them ~99% open: measured 0.0105 rad = 99.1% on 2026-08-30. If the jaws are ever left nearly shut, this resolves below zero and is refused at resolve time — part them first rather than editing the limits. Gripper rate 10 %/s (gentle limit 12), arm excursion 3 deg (rule 5).",
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
+    {"t": 2.5, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 3.0, -25.0], "label": "clamp, slight roll"},
+    {"t": 3.3, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 3.0, -25.0], "label": "hold"},
+    {"t": 5.8, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "release, back to rest"}
+  ]
+}

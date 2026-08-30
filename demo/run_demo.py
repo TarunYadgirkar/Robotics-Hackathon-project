@@ -196,11 +196,22 @@ def read_key():
 
 
 def gate(st, prompt, is_motion=False):
-    """Block until the operator advances. Returns 'go' or 'again'. Never auto-advances."""
+    """Block until the operator advances. Returns 'go' or 'again'.
+
+    Arm motions are NOT gated (operator's decision, 2026-08-30): the demo is the
+    robot trying something and reacting, not a human driving it key by key. They
+    run as soon as the beat reaches them, on the SPACE the operator already
+    pressed for the step before. Beat pacing is unchanged — every non-motion
+    step still waits — and Ctrl-C is still the e-stop, freezing and holding.
+    """
     if st.rehearse:
         say(f"{DIM}[rehearse] auto-advance: {prompt}{OFF}")
         return "go"
-    mark = f"{YEL}[ARM]{OFF} " if is_motion else ""
+    if is_motion:
+        say(f"\n{YEL}[ARM]{OFF} {BOLD}{prompt}{OFF}")
+        say(f"{DIM}  running now — Ctrl-C freezes and holds{OFF}")
+        return "go"
+    mark = ""
     while True:
         say()
         say(f"{mark}{BOLD}{prompt}{OFF}")

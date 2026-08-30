@@ -7,9 +7,14 @@ PROVENANCE, because none of it was measured by this module:
   are far more readable in degrees. `hw_backend.verify_against_yam()` re-checks
   these numbers against the live `yam.arm` module at connect time, so a drift
   between this file and the driver is caught before anything moves.
-* MAX_VEL_DEG_S is derived from `yam.arm.SafetyLimits.max_step_per_tick` (0.02
-  rad) at the driver's 100 Hz control tick — i.e. the arm's own slew clamp — and
-  the 30% cap in this module sits underneath it. It is not an invented number.
+* MAX_VEL_DEG_S is derived from `yam.arm.SafetyLimits.max_joint_speed` (2.0
+  rad/s) — the arm's own speed ceiling — and the 30% cap here sits underneath
+  it. It is not an invented number. NOTE: this used to be derived from
+  `max_step_per_tick` (0.02 rad/tick at 100 Hz). Boris's sync replaced that with
+  a time-based limit precisely because a per-tick cap made the real speed a
+  function of loop rate, and `verify_against_yam()` caught the drift on the
+  first hardware run — the numeric cap is unchanged (0.02 rad x 100 Hz = 2.0
+  rad/s), but it is now anchored to the constant that actually governs.
 * HOME_POSE_DEG is the measured resting pose from `scripts/plan_and_run.py`
   (stable with the motors off), with joint2/joint3 clamped up to their 0.0 lower
   bound: at rest they read ~0.01 deg below it, which `yam.arm` notes and clamps
@@ -52,13 +57,30 @@ _YAM_LIMITS_RAD = {
 LIMITS_DEG = {name: (math.degrees(lo), math.degrees(hi)) for name, (lo, hi) in _YAM_LIMITS_RAD.items()}
 LIMITS_DEG[GRIPPER_NAME] = (0.0, 100.0)  # percent open, sim-only
 
-# yam.arm.SafetyLimits: 0.02 rad per tick at the driver's 100 Hz control rate.
-YAM_MAX_STEP_PER_TICK_RAD = 0.02
+# yam.arm.SafetyLimits, current semantics: a rad/s speed ceiling plus a per-tick
+# anti-lunge ceiling that stops a late tick authorising a jump.
+YAM_MAX_JOINT_SPEED_RAD_S = 2.0
+YAM_MAX_STEP_PER_TICK_RAD = 0.05
 YAM_TICK_HZ = 100.0
-_YAM_SLEW_DEG_S = math.degrees(YAM_MAX_STEP_PER_TICK_RAD * YAM_TICK_HZ)  # ~114.6 deg/s
+_YAM_SPEED_DEG_S = math.degrees(YAM_MAX_JOINT_SPEED_RAD_S)  # ~114.6 deg/s
 
-MAX_VEL_DEG_S = {name: _YAM_SLEW_DEG_S for name in ARM_JOINT_NAMES}
-MAX_VEL_DEG_S[GRIPPER_NAME] = 120.0  # percent/s, sim-only
+MAX_VEL_DEG_S = {name: _YAM_SPEED_DEG_S for name in ARM_JOINT_NAMES}
+MAX_VEL_DEG_S[GRIPPER_NAME] = 120.0  # percent/s; the sim branch's ceiling
+
+# -- hardware-mode constraints (operator's rule at the arm, enforced in code) --
+# The arm stays essentially still and the motion is the gripper. These are
+# checked against the prepared setpoint stream in hw_backend BEFORE anything is
+# sent, so replaying a sim trajectory on hardware by mistake is refused rather
+# than swept through space.
+HW_MAX_EXCURSION_DEG = 5.0       # per arm joint, from the pose at motion start
+HW_GRIPPER_GENTLE_PCT_S = 12.0   # far below the sim cap; the jaws move slowly
+HW_GAIN_SCALE = 0.5              # yam.arm gain_scale: softer than the SDK default
+
+# Gripper calibration, from yam.arm (measured by Boris on this robot with these
+# jaws). The closed stop is a true hard stop and is the datum; the open stop is
+# compliant. The 0-100 percent channel used in trajectories maps onto this.
+GRIPPER_CLOSED_RAD = -5.158
+GRIPPER_OPEN_RAD = 0.056
 
 VELOCITY_CAP_FRACTION = 0.30
 LOW_SPEED_FRACTION = 0.25  # homing after an abort
@@ -79,17 +101,53 @@ def velocity_cap_deg_s() -> dict[str, float]:
 
 
 def to_yam_radians(positions) -> list[float]:
-    """The six arm-joint targets `yam.arm.YamArm.command_positions` expects."""
-    return [math.radians(v) for v in positions[:6]]
+    """Targets for `yam.arm.YamArm.command_positions`, built for a 7-joint arm.
+
+    The gripper is included because the hardware backend constructs YamArm with
+    ARM_JOINTS + GRIPPER_JOINT: Boris's sync calibrated the jaws, so the gripper
+    is now a commandable joint rather than an excluded one. Its channel converts
+    from percent-open to the motor angle through the measured stops.
+    """
+    return [math.radians(v) for v in positions[:6]] + [gripper_percent_to_rad(positions[6])]
 
 
-def check_limits(positions) -> list[str]:
-    """Return a list of human-readable soft-limit violations (empty == clean)."""
+def gripper_percent_to_rad(percent: float) -> float:
+    span = GRIPPER_OPEN_RAD - GRIPPER_CLOSED_RAD
+    return GRIPPER_CLOSED_RAD + (max(0.0, min(100.0, percent)) / 100.0) * span
+
+
+def gripper_rad_to_percent(position: float) -> float:
+    """Inverse of the above, via yam.arm.gripper_opening_fraction's definition."""
+    span = GRIPPER_OPEN_RAD - GRIPPER_CLOSED_RAD
+    return float(min(max((position - GRIPPER_CLOSED_RAD) / span, 0.0), 1.0)) * 100.0
+
+
+#: yam.arm: "Motors can sit marginally outside these limits at rest -- j2/j3 read
+#: 0.0115 deg below their 0.0 lower bound". Measured again on this arm during
+#: read-only bring-up: joint2 and joint3 both rest at -0.01 deg. A limit check
+#: that refuses the pose the arm is physically resting in is a broken check, so
+#: the bound carries this tolerance.
+REST_LIMIT_TOLERANCE_DEG = 0.05
+
+
+def check_limits(positions, base=None) -> list[str]:
+    """Human-readable soft-limit violations (empty == clean).
+
+    `base` is the pose a relative motion starts from. Where the arm already
+    rests outside a bound, that much excursion is accepted — the rule is that a
+    motion may not push a joint FURTHER out than it already is, not that the
+    arm's resting pose is illegal. yam.arm's own clamp_position() pulls such a
+    joint back inside on the first command either way.
+    """
     if len(positions) != N_JOINTS:
         return [f"expected {N_JOINTS} channels {JOINT_NAMES}, got {len(positions)}"]
     out = []
-    for name, value in zip(JOINT_NAMES, positions):
+    for i, (name, value) in enumerate(zip(JOINT_NAMES, positions)):
         lo, hi = LIMITS_DEG[name]
-        if not lo <= value <= hi:
+        allowance = REST_LIMIT_TOLERANCE_DEG
+        if base is not None:
+            resting = base[i]
+            allowance = max(allowance, lo - resting, resting - hi)
+        if not (lo - allowance) <= value <= (hi + allowance):
             out.append(f"{name}={value:.2f} outside soft limit [{lo:.2f}, {hi:.2f}]")
     return out

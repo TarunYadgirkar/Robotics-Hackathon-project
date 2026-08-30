@@ -13,9 +13,12 @@ PARQUET_COUNT: 424
 PARQUET_EXPECTED: 424
 PARQUET_TASK_DIRS: 50
 PARQUET_MISSING_TASKS: none
-HARDWARE_PRESENT: no
-HARDWARE_DEVICE_PATH: none found (only /dev/cu.Bluetooth-Incoming-Port and /dev/cu.debug-console; no usbmodem/usbserial device)
-LEROBOT_IMPORT: fail (ModuleNotFoundError: No module named 'lerobot')
+HARDWARE_PRESENT: yes
+HARDWARE_DEVICE_PATH: gs_usb:0 (CANable2, USB VID 0x1D50 PID 0x606F, serial 0035005B594E501820313332, bus 1 addr 1; CAN clock 170 MHz; not a /dev/tty or /dev/cu node — gs_usb is a raw-USB CAN adapter, so the old "no serial device" probe was looking for the wrong thing)
+HARDWARE_AMENDED_AT: 15:12 PDT 2026-08-30 — amended by orchestrator instruction at hardware arrival; original P0 value was HARDWARE_PRESENT: no. Verified by Agent C with pyusb (1 device matching 0x1D50:0x606F) and gs_usb.GsUsb.scan() (1 adapter). Everything else in this file is P0's, untouched.
+HARDWARE_DRIVER: yam.arm.YamArm (in-repo, Boris) over python-can gs_usb. NOT lerobot.
+LEROBOT_IMPORT: fail (ModuleNotFoundError: No module named 'lerobot') — irrelevant now; this arm is the YAM, driven by yam/arm.py
+PYTHON_CAN_INSTALLED: yes (4.6.1, installed by Agent C at hardware arrival; gs_usb + pyusb were already present)
 VENV_PATH: .venv/bin/python -> /Users/tarunyadgirkar/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12
 MEDIAPIPE_VERSION: 0.10.21
 MEDIAPIPE_OK: yes (matches required pin)

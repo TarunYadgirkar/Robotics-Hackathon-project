@@ -32,8 +32,10 @@ def check(condition: bool, message: str) -> None:
         FAILURES.append(message)
 
 
-def check_cap(traj_path: Path, speed: float = 1.0) -> None:
+def check_cap(traj_path: Path, speed: float = 1.0, base=None) -> None:
     traj = motion.load_trajectory(traj_path)
+    if traj.is_relative:
+        traj = motion.resolve_relative(traj, base)
     capped, setpoints, _ = motion.prepare(traj, speed)
     caps = model.velocity_cap_deg_s()
     peaks = motion.peak_velocities(setpoints)
@@ -46,15 +48,27 @@ def main() -> int:
     info = arm_io.describe()
     print(f"backend={info['backend']} simulated={info['simulated']} "
           f"HARDWARE_PRESENT(FACTS)={info['hardware_present_facts']!r}")
-    if info["simulated"]:
+    hardware = not info["simulated"]
+    if hardware:
+        print("HARDWARE RUN: this moves the real arm — gripper-first gestures, "
+              f"arm joints within {model.HW_MAX_EXCURSION_DEG} deg of the resting pose.")
+        print(f"gesture table: {info['gesture_dir']}")
+    else:
         print("DISCLOSURE: simulator fallback. No arm is connected; nothing below moved a servo.")
 
     print("\n[1] home()")
     final = arm_io.home()
-    check(
-        all(abs(a - b) < 1e-6 for a, b in zip(final, model.HOME_POSE_DEG)),
-        "home() ends at HOME_POSE_DEG",
-    )
+    if hardware:
+        resting = arm_io.current_pose()
+        check(
+            all(abs(a - b) < 1.0 for a, b in zip(final, resting)),
+            "home() settles and holds the resting pose (no sweep to a stored home)",
+        )
+    else:
+        check(
+            all(abs(a - b) < 1e-6 for a, b in zip(final, model.HOME_POSE_DEG)),
+            "home() ends at HOME_POSE_DEG",
+        )
 
     print("\n[2] gestures")
     for name in arm_io.GESTURE_NAMES:
@@ -66,10 +80,11 @@ def main() -> int:
     check(True, "replay(task_demo, speed=0.5) completed")
 
     print("\n[4] velocity cap holds on every shipped trajectory")
+    base = arm_io.current_pose() if hardware else None
     for name in arm_io.GESTURE_NAMES:
-        check_cap(arm_io.GESTURE_DIR / f"{name}.json")
-    check_cap(arm_io.TASK_DEMO_PATH)
-    check_cap(arm_io.TASK_DEMO_PATH, speed=0.5)
+        check_cap(arm_io.GESTURE_DIR / f"{name}.json", base=base)
+    check_cap(arm_io.TASK_DEMO_PATH, base=base)
+    check_cap(arm_io.TASK_DEMO_PATH, speed=0.5, base=base)
 
     print("\n[5] cap stretches an over-fast trajectory instead of clipping the path")
     far = (80.0, *model.HOME_POSE_DEG[1:])
@@ -144,10 +159,10 @@ def main() -> int:
     check(safety.is_frozen(), "still frozen after unconfirmed recovery attempt")
     safety.clear_freeze()
 
-    print("\n[8] YAM hardware branch stays out of the way while HARDWARE_PRESENT is no")
-    from arm import hw_backend  # noqa: PLC0415 — the point is that this import is safe
+    print("\n[8] YAM hardware branch")
+    from arm import hw_backend  # noqa: PLC0415
 
-    check(True, "arm.hw_backend imports with no python-can / gs_usb / yam deps present")
+    check(True, "arm.hw_backend imports cleanly")
     check(
         len(hw_backend.preflight_checklist()) >= 5,
         "hardware pre-flight checklist is populated (self-collision + keep-alive + gripper)",
@@ -160,23 +175,46 @@ def main() -> int:
     ceiling_ok = True
     for name in (*arm_io.GESTURE_NAMES, "task_demo"):
         traj = motion.load_trajectory(arm_io.GESTURE_DIR / f"{name}.json")
-        for w in traj.waypoints:
+        resolved = motion.resolve_relative(traj, base) if traj.is_relative else traj
+        for w in resolved.waypoints:
             if w.positions[1] > model.JOINT2_AUTHORED_CEILING_DEG:
                 ceiling_ok = False
-    check(ceiling_ok, f"every authored pose keeps joint2 below {model.JOINT2_AUTHORED_CEILING_DEG} deg "
+    check(ceiling_ok, f"every pose keeps joint2 below {model.JOINT2_AUTHORED_CEILING_DEG} deg "
                       f"(self-collision ~{model.JOINT2_SELF_COLLISION_DEG} deg)")
     check(
-        all(traj_source.endswith("authored") for traj_source in info["gesture_sources"].values()),
-        f"gesture trajectories declare themselves sim-authored: {info['gesture_sources']}",
+        all("authored" in source for source in info["gesture_sources"].values()),
+        f"gesture trajectories declare their provenance: {info['gesture_sources']}",
     )
 
-    print("\n[9] sim artifacts")
-    if info["simulated"] and os.environ.get("ARM_SIM_RENDER", "1") != "0":
-        for name in ("home", *arm_io.GESTURE_NAMES, "task_demo"):
-            gif = REPO_ROOT / "arm" / "sim_out" / f"{name}.gif"
-            png = REPO_ROOT / "arm" / "sim_out" / f"{name}.png"
-            check(gif.exists() and gif.stat().st_size > 0, f"{gif.name} rendered")
-            check(png.exists() and png.stat().st_size > 0, f"{png.name} rendered")
+    if hardware:
+        print("\n[9] hardware rule enforcement")
+        val = arm_io._backend.validation
+        check(val is not None and val["worst_arm_excursion_deg"] <= model.HW_MAX_EXCURSION_DEG,
+              f"last motion stayed within {model.HW_MAX_EXCURSION_DEG} deg "
+              f"(measured {val['worst_arm_excursion_deg']:.2f})")
+        check(val["peak_gripper_pct_s"] <= model.HW_GRIPPER_GENTLE_PCT_S,
+              f"gripper stayed gentle ({val['peak_gripper_pct_s']:.1f} <= "
+              f"{model.HW_GRIPPER_GENTLE_PCT_S} %/s)")
+        try:
+            sim_traj = motion.load_trajectory(REPO_ROOT / "arm" / "gestures" / "task_demo.json")
+            _, sim_sp, _ = motion.prepare(sim_traj, 1.0, model.YAM_TICK_HZ)
+            hw_backend.validate_hardware_motion(sim_sp, "SIM task_demo")
+            check(False, "a sim trajectory is refused on hardware")
+        except hw_backend.HardwareMotionRefused:
+            check(True, "a sim trajectory is refused on hardware (negative control)")
+        arm = arm_io._backend._arm
+        check(arm.failures == 0, f"no CAN exchange failures during the run (failures={arm.failures}, "
+                                 f"resyncs={arm.resyncs})")
+        arm_io.shutdown()
+        check(True, "motors disabled and bus closed")
+    else:
+        print("\n[9] sim artifacts")
+        if os.environ.get("ARM_SIM_RENDER", "1") != "0":
+            for name in ("home", *arm_io.GESTURE_NAMES, "task_demo"):
+                gif = REPO_ROOT / "arm" / "sim_out" / f"{name}.gif"
+                png = REPO_ROOT / "arm" / "sim_out" / f"{name}.png"
+                check(gif.exists() and gif.stat().st_size > 0, f"{gif.name} rendered")
+                check(png.exists() and png.stat().st_size > 0, f"{png.name} rendered")
 
     print("\n=== %d check(s) failed ===" % len(FAILURES) if FAILURES else "\n=== all checks passed ===")
     return 1 if FAILURES else 0

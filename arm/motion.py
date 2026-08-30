@@ -30,16 +30,25 @@ class Waypoint:
     label: str = ""
 
 
+FRAME_ABSOLUTE = "absolute"
+FRAME_RELATIVE = "relative"
+
+
 @dataclass(frozen=True)
 class Trajectory:
     name: str
     source: str
     waypoints: tuple[Waypoint, ...]
     notes: str = ""
+    frame: str = FRAME_ABSOLUTE
 
     @property
     def duration(self) -> float:
         return self.waypoints[-1].t if self.waypoints else 0.0
+
+    @property
+    def is_relative(self) -> bool:
+        return self.frame == FRAME_RELATIVE
 
 
 def load_trajectory(path: str | Path) -> Trajectory:
@@ -61,13 +70,24 @@ def load_trajectory(path: str | Path) -> Trajectory:
     if not data["waypoints"]:
         raise TrajectoryError(f"{path}: no waypoints")
 
+    frame = data.get("frame", FRAME_ABSOLUTE)
+    if frame not in (FRAME_ABSOLUTE, FRAME_RELATIVE):
+        raise TrajectoryError(f"{path}: frame must be 'absolute' or 'relative', got {frame!r}")
+
     waypoints = []
     last_t = None
     for i, raw in enumerate(data["waypoints"]):
         positions = tuple(float(v) for v in raw["positions"])
-        violations = model.check_limits(positions)
-        if violations:
-            raise SoftLimitError(f"{path}: waypoint {i}: " + "; ".join(violations))
+        if len(positions) != model.N_JOINTS:
+            raise TrajectoryError(
+                f"{path}: waypoint {i}: expected {model.N_JOINTS} channels, got {len(positions)}"
+            )
+        # Relative waypoints are offsets, so they are limit-checked after they are
+        # resolved against the arm's actual pose, not here.
+        if frame == FRAME_ABSOLUTE:
+            violations = model.check_limits(positions)
+            if violations:
+                raise SoftLimitError(f"{path}: waypoint {i}: " + "; ".join(violations))
         t = float(raw["t"])
         if last_t is not None and t <= last_t:
             raise TrajectoryError(f"{path}: waypoint {i}: t={t} not after {last_t}")
@@ -82,6 +102,36 @@ def load_trajectory(path: str | Path) -> Trajectory:
         source=data["source"],
         waypoints=tuple(waypoints),
         notes=data.get("notes", ""),
+        frame=frame,
+    )
+
+
+def resolve_relative(traj: Trajectory, current: tuple[float, ...]) -> Trajectory:
+    """Turn an offset trajectory into absolute poses around the arm's actual pose.
+
+    Limits are checked here, once the offsets mean something. A refusal at this
+    point usually means the arm is resting somewhere the gesture cannot be
+    played from — e.g. jaws already wide open when the gesture wants to open
+    them further — and the fix is to reposition, not to widen a limit.
+    """
+    if not traj.is_relative:
+        return traj
+    resolved = []
+    for i, w in enumerate(traj.waypoints):
+        positions = tuple(base + delta for base, delta in zip(current, w.positions))
+        violations = model.check_limits(positions, base=current)
+        if violations:
+            raise SoftLimitError(
+                f"{traj.name}: waypoint {i} ({w.label}) resolves outside the limits from the "
+                f"arm's current pose: " + "; ".join(violations)
+            )
+        resolved.append(Waypoint(t=w.t, positions=positions, label=w.label))
+    return Trajectory(
+        name=traj.name,
+        source=traj.source,
+        waypoints=tuple(resolved),
+        notes=traj.notes,
+        frame=FRAME_ABSOLUTE,
     )
 
 

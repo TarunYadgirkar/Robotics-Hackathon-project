@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "point_screen",
+  "source": "hardware-authored (relative, gripper-first)",
+  "frame": "relative",
+  "notes": "HARDWARE GESTURE TABLE. Offsets from the resting pose. The arm does NOT turn toward the screen — that is a joint1 sweep and the hardware rule forbids it. It holds its pose and clamps once, held while the operator reads the numbers off the evidence screen, then releases. Say on stage that the pointing is the simulator's; on the real arm the gesture is the jaws. Gripper rate 10 %/s (limit 12), arm excursion 0 deg.",
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
+    {"t": 3.5, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -35.0], "label": "clamp"},
+    {"t": 6.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -35.0], "label": "hold on the numbers"},
+    {"t": 9.5, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "release, back to rest"}
+  ]
+}
