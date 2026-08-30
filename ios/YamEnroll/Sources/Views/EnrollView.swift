@@ -3,21 +3,65 @@ import SwiftUI
 /// The touch-to-capture half, driven from the arm's live joint feedback.
 struct EnrollView: View {
     @EnvironmentObject private var client: ServerClient
+    @EnvironmentObject private var scanner: LidarScanner
+    @State private var confirmingFinish = false
 
     private var state: EnrollmentState? { client.state }
 
     var body: some View {
+        Group {
+            if state?.isFinished == true {
+                FinishedView(state: state)
+            } else {
+                enrolling
+            }
+        }
+        .background(Color.white)
+    }
+
+    private var enrolling: some View {
         VStack(spacing: 0) {
             header
-            Spacer(minLength: 0)
-            CoverageDial(patches: state?.patches ?? [], progress: state?.progress ?? 0)
-                .frame(height: 220)
-            Spacer(minLength: 0)
+            preview
             stats
             controls
         }
         .padding(.horizontal, 20)
-        .background(Color.white)
+        .confirmationDialog("End enrollment?", isPresented: $confirmingFinish, titleVisibility: .visible) {
+            Button("Save and finish", role: .destructive) {
+                Task { await client.send(command: "done") }
+            }
+            Button("Keep enrolling", role: .cancel) {}
+        } message: {
+            Text("This saves the session and releases the arm. It does not upload the scan -- send that from the Scan tab first.")
+        }
+    }
+
+    /// The reconstruction so far, alongside the coverage it is being judged by.
+    private var preview: some View {
+        ZStack(alignment: .topTrailing) {
+            if scanner.meshCount > 0 {
+                ScanPreview(scanner: scanner, revision: scanner.meshCount)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+            } else {
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color(white: 0.97))
+                    .overlay(
+                        VStack(spacing: 6) {
+                            Image(systemName: "cube.transparent")
+                                .font(.system(size: 26)).foregroundStyle(Theme.muted)
+                            Text("Sweep the room on the Scan tab\nto build the mesh")
+                                .multilineTextAlignment(.center)
+                                .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                        }
+                    )
+            }
+            CoverageDial(patches: state?.patches ?? [], progress: state?.progress ?? 0)
+                .frame(width: 108, height: 108)
+                .padding(10)
+        }
+        .frame(maxHeight: .infinity)
+        .padding(.vertical, 10)
     }
 
     private var header: some View {
@@ -71,19 +115,19 @@ struct EnrollView: View {
             }
 
             HStack(spacing: 10) {
-                secondary("Reference", "scope") { await client.send(command: "reference") }
-                secondary("Undo", "arrow.uturn.backward") { await client.send(command: "undo") }
-                secondary("Next", "plus") { await client.send(command: "next") }
-                secondary("Finish", "checkmark") { await client.send(command: "done") }
+                secondary("Reference", "scope") { Task { await client.send(command: "reference") } }
+                secondary("Undo", "arrow.uturn.backward") { Task { await client.send(command: "undo") } }
+                secondary("Next", "plus") { Task { await client.send(command: "next") } }
+                secondary("Finish", "checkmark") { confirmingFinish = true }
             }
         }
         .padding(.bottom, 8)
     }
 
-    private func secondary(_ title: String, _ icon: String, action: @escaping () async -> Void) -> some View {
+    private func secondary(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.tap()
-            Task { await action() }
+            action()
         } label: {
             VStack(spacing: 3) {
                 Image(systemName: icon).font(.system(size: 14))
@@ -154,5 +198,54 @@ enum Haptics {
     }
     static func success() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+}
+
+
+/// What Finish actually did. Previously the server stopped on Finish and the
+/// phone simply went quiet, which reads as a failed upload rather than a save.
+struct FinishedView: View {
+    let state: EnrollmentState?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 44)).foregroundStyle(Theme.red)
+            Text("Enrollment saved")
+                .font(.system(size: 28, weight: .semibold)).foregroundStyle(Theme.ink)
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(state?.objects ?? [], id: \.name) { object in
+                    row(object.name, object.boxMm.map { "\($0[0]) x \($0[1]) x \($0[2]) mm" }
+                        ?? "\(object.points) points")
+                }
+                row("arm poses logged", "\(state?.poseSamples ?? 0)")
+                row("scans uploaded", "\((state?.scans ?? []).count)")
+                row("reference points", "\(state?.referenceCount ?? 0)")
+            }
+
+            if (state?.referenceCount ?? 0) < 3, !(state?.scans ?? []).isEmpty {
+                Text("The scan needs 3 reference points to be aligned to the arm. Without them it cannot be used for planning.")
+                    .font(.system(size: 13)).foregroundStyle(Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("The arm has been released. Restart the server on the laptop to enroll again.")
+                .font(.system(size: 13)).foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(.system(size: 14)).foregroundStyle(Theme.muted)
+            Spacer()
+            Text(value).font(.system(size: 14, weight: .medium, design: .monospaced))
+                .foregroundStyle(Theme.ink)
+        }
     }
 }

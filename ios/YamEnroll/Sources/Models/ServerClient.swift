@@ -183,6 +183,7 @@ struct EnrollmentState: Decodable {
     var tip: [Double]?
     var points: [[Double]]?
     var references: [[Double]]?
+
     var pointCount: Int?
     var patches: [Bool]?
     var progress: Double?
@@ -190,13 +191,28 @@ struct EnrollmentState: Decodable {
     var poseSamples: Int?
     var scans: [String]?
     var message: String?
+    var savedTo: String?
+    var objects: [FinishedObject]?
+    var referenceCount: Int?
 
     enum CodingKeys: String, CodingKey {
         case status, prompt, joints, tip, points, references, patches, progress, temperature, scans, message
         case objectName = "object_name"
         case pointCount = "point_count"
         case poseSamples = "pose_samples"
+        case savedTo = "saved_to"
+        case objects
+        case referenceCount = "reference_count"
     }
+
+    var isFinished: Bool { status == "finished" }
+}
+
+struct FinishedObject: Decodable {
+    var name: String
+    var points: Int
+    var boxMm: [Int]?
+    enum CodingKeys: String, CodingKey { case name, points, boxMm = "box_mm" }
 }
 
 struct ScanSummary: Decodable {

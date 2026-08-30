@@ -63,6 +63,8 @@ def main() -> None:
                         help="0.0.0.0 lets the phone that does the LiDAR scan open the viewer; "
                              "use 127.0.0.1 to keep it on this machine only")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--linger", type=float, default=180.0,
+                        help="seconds to keep the viewer up after finishing, so the phone sees the result")
     parser.add_argument("--tunnel", action="store_true",
                         help="expose the viewer through a Cloudflare quick tunnel, for networks "
                              "like eduroam that block phone-to-laptop traffic")
@@ -235,18 +237,42 @@ def main() -> None:
             print("\n  need at least 3 touches to judge repeatability")
 
     session.save(args.output)
-    server.update({**server.snapshot(), "status": "finished"})
 
+    summary = []
     print(f"\n  saved {args.output}  ({len(session.pose_log)} arm poses logged for scan subtraction)")
     for obstacle in session.objects:
         bounds = obstacle.bounds()
         if bounds is None:
             print(f"    {obstacle.name}: no points")
+            summary.append({"name": obstacle.name, "points": 0})
             continue
         size = (bounds[1] - bounds[0]) * 1000
-        print(f"    {obstacle.name}: {len(obstacle.points)} points -> box {size[0]:.0f} x {size[1]:.0f} x {size[2]:.0f} mm")
+        print(f"    {obstacle.name}: {len(obstacle.positions())} points -> "
+              f"box {size[0]:.0f} x {size[1]:.0f} x {size[2]:.0f} mm")
+        summary.append({
+            "name": obstacle.name,
+            "points": len(obstacle.positions()),
+            "box_mm": [round(float(v)) for v in size],
+        })
 
-    time.sleep(0.5)
+    # Keep serving after the arm is released. Finish used to stop the server
+    # immediately, so the phone's next poll failed and the operator was left
+    # guessing whether anything had been saved.
+    server.update({
+        "status": "finished",
+        "saved_to": os.path.abspath(args.output),
+        "objects": summary,
+        "pose_samples": len(session.pose_log),
+        "scans": [os.path.basename(path) for path in server.uploads],
+        "reference_count": len(session.reference_points()),
+    })
+
+    print(f"\n  Motors released. The viewer stays up for {args.linger:.0f}s so the phone can")
+    print("  show the result -- Ctrl-C to stop it sooner.")
+    try:
+        time.sleep(args.linger)
+    except KeyboardInterrupt:
+        pass
     server.stop()
 
 

@@ -1,6 +1,7 @@
 import ARKit
 import Combine
 import RealityKit
+import SceneKit
 import simd
 
 /// Captures the workcell with the phone's LiDAR.
@@ -85,6 +86,56 @@ final class LidarScanner: NSObject, ObservableObject {
             }
         }
         return Array(grid.values)
+    }
+
+    /// The reconstruction as SceneKit nodes, for viewing away from the camera.
+    ///
+    /// ARKit's buffers are handed straight to SceneKit rather than copied into
+    /// Swift arrays: the mesh runs to tens of thousands of triangles and
+    /// rebuilding it per frame would stall the UI.
+    func sceneNodes() -> [SCNNode] {
+        anchors.values.compactMap { anchor in
+            let geometry = anchor.geometry
+
+            let vertices = SCNGeometrySource(
+                buffer: geometry.vertices.buffer,
+                vertexFormat: geometry.vertices.format,
+                semantic: .vertex,
+                vertexCount: geometry.vertices.count,
+                dataOffset: geometry.vertices.offset,
+                dataStride: geometry.vertices.stride
+            )
+
+            let faces = geometry.faces
+            let faceData = Data(bytes: faces.buffer.contents(), count: faces.buffer.length)
+            let element = SCNGeometryElement(
+                data: faceData,
+                primitiveType: .triangles,
+                primitiveCount: faces.count,
+                bytesPerIndex: faces.bytesPerIndex
+            )
+
+            let node = SCNNode(geometry: SCNGeometry(sources: [vertices], elements: [element]))
+            node.simdTransform = anchor.transform
+            return node
+        }
+    }
+
+    /// Centre of the reconstruction, so a viewer can frame it without guessing.
+    func bounds() -> (centre: SIMD3<Float>, radius: Float)? {
+        var low = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
+        var high = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
+        var seen = false
+
+        for anchor in anchors.values {
+            let translation = anchor.transform.columns.3
+            let position = SIMD3<Float>(translation.x, translation.y, translation.z)
+            low = simd_min(low, position)
+            high = simd_max(high, position)
+            seen = true
+        }
+        guard seen else { return nil }
+        return ((low + high) / 2, max(simd_length(high - low) / 2, 0.5))
     }
 
     /// Where a screen tap lands on the scanned surface, in ARKit world space.
