@@ -3,6 +3,7 @@ synthetic fallback used only when the camera cannot be opened (WEBCAM_STATUS in
 FACTS.md is currently `blocked` - macOS TCC camera-permission denial, not a
 hardware-absence signal).
 """
+import os
 import sys
 import time
 
@@ -15,7 +16,9 @@ SPACE = 32
 QUIT = ord("q")
 
 
-def open_camera(device=0):
+def open_camera(device=None):
+    if device is None:
+        device = int(os.environ.get("CAMERA_INDEX", "0"))
     """Returns an opened cv2.VideoCapture, or None if it cannot be opened.
 
     Mirrors the exact check used in the P0 probe (`cv2.VideoCapture(0).isOpened()`)
