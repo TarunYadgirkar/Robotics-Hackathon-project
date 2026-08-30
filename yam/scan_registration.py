@@ -51,22 +51,38 @@ class ScanRegistration:
         return self.inliers / max(self.model_points, 1)
 
     @property
-    def is_trustworthy(self) -> bool:
-        """A good fit needs closeness AND coverage, and the bar for closeness is low.
+    def verdict(self) -> str:
+        """"good", "inconclusive" or "bad" -- never a bare boolean.
 
-        The threshold is scanner resolution, not a universal constant. On a
-        synthetic cloud with 4mm noise the true pose scored 3.2mm; on a real
-        phone sweep -- coarse enough that it does not resolve 25mm clamps -- a
-        registration confirmed correct by four independent means scored 19.6mm.
-        A 10mm bar rejected a good fit, so this is set at 30mm.
+        A single fit's residual cannot separate right from wrong on this
+        hardware. Measured: the true pose scores ~3mm on a clean synthetic
+        cloud, a wrong yaw at the same position scores 21-22mm, and a
+        registration confirmed correct by four independent means on a real phone
+        sweep scores 19.6mm. Wrong-yaw and confirmed-correct overlap, so any
+        threshold placed between them is guessing.
 
-        RMSE alone was never the discriminator anyway. What actually established
-        that fit was agreement: four different seeds converged to the same base
-        position within 21mm, and the scan's horizontal surfaces landed on the
-        table and floor heights measured separately by touching them. Prefer
-        `agrees_with` over this flag where several fits are available.
+        The band where they overlap is therefore reported as inconclusive rather
+        than resolved in either direction. Use `agrees_with`: a wrong pose is a
+        local minimum that an unrelated seed will not find, so convergence from
+        separate seeds does discriminate where a residual does not.
         """
-        return self.rmse < 0.030 and self.inlier_fraction > 0.9
+        if self.inlier_fraction <= 0.9:
+            return "bad"
+        if self.rmse < 0.010:
+            return "good"
+        if self.rmse < 0.035:
+            return "inconclusive"
+        return "bad"
+
+    @property
+    def is_trustworthy(self) -> bool:
+        """Only a fit that is unambiguously good on its own evidence.
+
+        Deliberately conservative: "inconclusive" answers False here, so a
+        caller that ignores `verdict` fails safe rather than acting on a fit
+        that could be a wrong yaw.
+        """
+        return self.verdict == "good"
 
     def agrees_with(self, other: "ScanRegistration", tolerance: float = 0.05) -> bool:
         """Whether two fits put the robot base in the same place.

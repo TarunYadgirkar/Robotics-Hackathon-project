@@ -156,14 +156,28 @@ def main() -> None:
         if result is None:
             print("  no fit near there. Try clicking closer to the middle of the arm.")
             continue
-        print(f"  {result.describe()}")
-        print(f"  trustworthy: {result.is_trustworthy}")
+        print(f"  {result.describe()}  [{result.verdict}]")
+
+        # A single residual cannot separate a correct fit from a wrong yaw on
+        # this scanner, so confirm by re-fitting from a deliberately different
+        # seed. A wrong pose is a local minimum an unrelated seed will not find.
+        offset = np.array(seed) + np.array([0.18, -0.14, 0.12])
+        second = refine_from_seed(scan, model, offset.tolist())
+        if second is not None and result.agrees_with(second):
+            confirmed = True
+            print(f"  CONFIRMED: a seed 26cm away converged to the same pose "
+                  f"({second.rmse * 1000:.1f} mm)")
+        else:
+            confirmed = False
+            print("  NOT CONFIRMED: a second seed found a different pose. "
+                  "Do not plan on this; click nearer the middle of the arm.")
         with open(args.output, "w") as handle:
             json.dump({"rotation": result.rotation.tolist(),
                        "translation": result.translation.tolist(),
                        "rmse_mm": result.rmse * 1000,
                        "inliers": result.inliers,
-                       "trustworthy": bool(result.is_trustworthy)}, handle, indent=2)
+                       "verdict": result.verdict,
+                       "confirmed_by_second_seed": confirmed}, handle, indent=2)
         print(f"  wrote {args.output}")
 
         # Put the fitted model back into scan coordinates so the operator can see
@@ -176,8 +190,8 @@ def main() -> None:
             "rmse": float(result.rmse * 1000),
             "model": np.round(placed, 4).ravel().tolist(),
         })
-        if result.is_trustworthy:
-            print("  Good fit. Ctrl-C here, then build the map from the scan.")
+        if confirmed:
+            print("  Ctrl-C here, then build the map from the scan.")
 
 
 if __name__ == "__main__":
