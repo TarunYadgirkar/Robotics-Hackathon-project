@@ -13,7 +13,7 @@ import numpy as np
 from yam.enrollment import EnrollmentSession
 from yam.kinematics import YamKinematics
 from yam.lidar import kabsch, load_point_cloud
-from yam.mapping import build_map, table_slab
+from yam.mapping import base_clamps, build_map, table_slab
 
 
 def main() -> None:
@@ -25,6 +25,15 @@ def main() -> None:
     parser.add_argument("--table-z", type=float, default=None, help="tabletop height in base frame (m)")
     parser.add_argument("--table-edge", type=float, default=0.30,
                         help="x where the tabletop ends; beyond this the arm may go below table level")
+    parser.add_argument("--obstacle-mode", choices=("box", "spheres"), default="box",
+                        help="box: one bounding box round all touched points. spheres: each "
+                             "touched point is its own small obstacle, which is what you want "
+                             "when the points are separate things rather than one object.")
+    parser.add_argument("--sphere-radius", type=float, default=0.08)
+    parser.add_argument("--min-base-distance", type=float, default=0.15,
+                        help="ignore touched points nearer the base than this; they are the robot")
+    parser.add_argument("--clamps", action="store_true",
+                        help="add the two base clamps, which LiDAR is too coarse to resolve")
     parser.add_argument("--resolution", type=float, default=0.02)
     parser.add_argument("--output", default="workcell_map.npz")
     args = parser.parse_args()
@@ -76,10 +85,35 @@ def main() -> None:
     table = table_slab(args.table_z, args.table_edge) if args.table_z is not None else None
 
     voxel_map = build_map(
-        session=session, scan_points=points, table=table, resolution=args.resolution,
+        session=None if args.obstacle_mode == "spheres" else session,
+        scan_points=points, table=table, resolution=args.resolution,
         kinematics=kinematics, scan_poses=scan_poses, scan_is_registered=registered,
     )
+
+    if args.obstacle_mode == "spheres" and session is not None:
+        import numpy as np
+
+        kept = skipped = 0
+        for obstacle in session.objects:
+            for position in obstacle.positions():
+                if np.linalg.norm(position) < args.min_base_distance:
+                    skipped += 1
+                    continue
+                voxel_map.add_box(np.array(position) - args.sphere_radius,
+                                  np.array(position) + args.sphere_radius)
+                kept += 1
+        if skipped:
+            print(f"  ignored {skipped} touched point(s) within {args.min_base_distance * 100:.0f}cm "
+                  f"of the base -- those are the robot, not an obstacle")
+        print(f"  {kept} touched points as {args.sphere_radius * 100:.0f}cm obstacles")
+        voxel_map.compute_distance_field()
     voxel_map.save(args.output)
+
+    if args.clamps:
+        for box in base_clamps(table_z=args.table_z if args.table_z is not None else -0.02):
+            voxel_map.add_box(box["min"], box["max"])
+        print(f"  added 2 base clamps (140 x 25 x 102 mm, +-102mm either side of centreline)")
+        voxel_map.compute_distance_field()
 
     occupied = int(voxel_map.occupancy.sum())
     print(f"\n  map: {voxel_map.shape} voxels at {args.resolution * 1000:.0f}mm, {occupied:,} occupied")

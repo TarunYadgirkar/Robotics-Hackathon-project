@@ -77,6 +77,22 @@ def build_map(
     return voxel_map
 
 
+#: The clamps holding the base to the table. LiDAR does not resolve them -- they
+#: are 25mm wide next to a much larger arm -- so they are described by hand.
+#: Dimensions as given: 5.5in tall, 1in wide, 4in long, long axis along the arm's
+#: forward direction, centred 4in either side of the base centreline.
+def base_clamps(offset_y: float = 0.1016, height: float = 0.1397, width: float = 0.0254,
+                length: float = 0.1016, table_z: float = -0.02) -> list:
+    boxes = []
+    for sign in (+1, -1):
+        centre_y = sign * offset_y
+        boxes.append({
+            "min": [-length / 2, centre_y - width / 2, table_z],
+            "max": [+length / 2, centre_y + width / 2, table_z + height],
+        })
+    return boxes
+
+
 def table_slab(surface_z: float, edge_x: float, extent: float = 0.95, thickness: float = 0.04) -> dict:
     """A table the arm is mounted at the edge of.
 

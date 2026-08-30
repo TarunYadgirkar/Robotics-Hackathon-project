@@ -61,9 +61,13 @@ class GuardLimits:
     #: measured 12.36Nm under ordinary load, so the headroom here is about 0.6Nm
     #: -- deliberately tight, and worth re-measuring before it is raised.
     absolute_torque: float = 13.0
-    #: Generous, because gravity sag alone reaches ~0.22 rad on this arm. This is
-    #: a backstop, not the primary signal.
-    max_tracking_error: float = 0.35
+    #: The planner verifies the path inside this envelope, so it is not just a
+    #: backstop -- it is the promise the plan is checked against. 0.35 rad was
+    #: chosen to accommodate the worst unguarded sag ever measured, but verifying
+    #: a path against +-20deg of lag fails almost every path. Held to 0.10 rad
+    #: (5.7deg) instead, which the measured sag under gain 0.5 stays inside
+    #: (joint4 drooped 3.6deg), and enforced rather than tolerated.
+    max_tracking_error: float = 0.10
     max_temperature: float = 65.0
     #: Seconds of exponential history the torque baseline averages over.
     baseline_seconds: float = 0.35

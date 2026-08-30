@@ -269,13 +269,69 @@ def register_arm_to_scan(
     )
 
 
+def _build_field(upright: np.ndarray, resolution: float = 0.02):
+    from scipy import ndimage
+
+    low = upright.min(axis=0) - 0.4
+    high = upright.max(axis=0) + 0.4
+    shape = np.maximum(np.ceil((high - low) / resolution).astype(int), 1)
+    occupancy = np.zeros(shape, dtype=bool)
+    cells = np.floor((upright - low) / resolution).astype(int)
+    cells = cells[np.all((cells >= 0) & (cells < shape), axis=1)]
+    occupancy[cells[:, 0], cells[:, 1], cells[:, 2]] = True
+    field = ndimage.distance_transform_edt(~occupancy, sampling=resolution)
+
+    def lookup(points: np.ndarray) -> np.ndarray:
+        cell = np.floor((points - low) / resolution).astype(int)
+        inside = np.all((cell >= 0) & (cell < shape), axis=-1)
+        out = np.full(points.shape[:-1], 5.0)
+        valid = cell[inside]
+        out[inside] = field[valid[..., 0], valid[..., 1], valid[..., 2]]
+        return out
+
+    return lookup
+
+
+def _free_space_shell(model: np.ndarray, count: int, seed: int = 0) -> np.ndarray:
+    """Points that must be EMPTY if the model is where the arm is.
+
+    Without this, "the model lies on a surface" is satisfied just as well by a
+    wall as by the arm.
+    """
+    rng = np.random.default_rng(seed)
+    directions = rng.normal(size=(len(model) * 2, 3))
+    directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+    shell = np.repeat(model, 2, axis=0) + directions * rng.uniform(0.09, 0.16, (len(model) * 2, 1))
+    shell = shell[cKDTree(model).query(shell, k=1)[0] > 0.07]
+    if len(shell) > count:
+        shell = shell[rng.choice(len(shell), count, replace=False)]
+    return shell
+
+
+def _sweep(lookup, model, shell, centre, radius, step, yaws, free_space_weight):
+    offsets = np.arange(-radius, radius + 1e-9, step)
+    grid = np.array([[dx, dy, dz] for dx in offsets for dy in offsets for dz in offsets])
+    candidates = centre + grid
+
+    best = None
+    for yaw in yaws:
+        rotation = yaw_matrix(yaw)
+        placed = model @ rotation.T
+        empty = shell @ rotation.T
+        on_surface = np.minimum(lookup(placed[None] + candidates[:, None, :]), 0.10).mean(axis=1)
+        free = np.minimum(lookup(empty[None] + candidates[:, None, :]), 0.10).mean(axis=1)
+        score = on_surface - free_space_weight * free
+        index = int(np.argmin(score))
+        if best is None or score[index] < best[0]:
+            best = (float(score[index]), float(yaw), candidates[index].copy())
+    return best, len(candidates) * len(yaws)
+
+
 def refine_from_seed(
     scan_points: np.ndarray,
     arm_points: np.ndarray,
     seed_point: Sequence[float],
-    yaw_steps: int = 180,
-    search_radius: float = 0.35,
-    translation_step: float = 0.05,
+    search_radius: float = 0.40,
     cutoff: float = 0.12,
     iterations: int = 40,
     free_space_weight: float = 0.8,
@@ -286,17 +342,17 @@ def refine_from_seed(
     small object in a large cloud, and point-to-cloud distance alone is happy to
     park it against any dense surface. One coarse indication of where the arm is
     -- a tap in the AR view, accurate to a hand's width -- removes that entirely.
-    Yaw is still unknown, so it is swept exhaustively, but translation only has
-    to be searched within `search_radius` of the seed.
 
-    Precision does not come from the seed. It comes from the ICP that follows,
-    which fits thousands of known surface points, so a coarse tap yields a fit as
-    good as the geometry allows.
+    Searched coarse-to-fine rather than at one resolution. A single fine sweep
+    over yaw and a 0.4m translation cube is hundreds of millions of lookups and
+    took ~90 seconds, long enough that the phone gave up on the request before
+    the answer existed. Two passes reach the same place in a few seconds.
+
+    Precision does not come from the seed, or from the sweep. It comes from the
+    ICP that follows, which fits the whole model.
 
     `seed_point` is in the scan's own (ARKit) frame -- what a raycast returns.
     """
-    from scipy import ndimage
-
     scan = np.asarray(scan_points, dtype=float).reshape(-1, 3)
     model = np.asarray(arm_points, dtype=float).reshape(-1, 3)
     if len(scan) < 100 or len(model) < 20:
@@ -304,58 +360,27 @@ def refine_from_seed(
 
     upright = scan @ ARKIT_TO_ZUP.T
     seed = np.asarray(seed_point, dtype=float) @ ARKIT_TO_ZUP.T
+    lookup = _build_field(upright)
 
-    resolution = 0.02
-    low = upright.min(axis=0) - 0.4
-    high = upright.max(axis=0) + 0.4
-    shape = np.maximum(np.ceil((high - low) / resolution).astype(int), 1)
-    occupancy = np.zeros(shape, dtype=bool)
-    indices = np.floor((upright - low) / resolution).astype(int)
-    indices = indices[np.all((indices >= 0) & (indices < shape), axis=1)]
-    occupancy[indices[:, 0], indices[:, 1], indices[:, 2]] = True
-    field = ndimage.distance_transform_edt(~occupancy, sampling=resolution)
+    def thin(points, count):
+        return points if len(points) <= count else points[np.linspace(0, len(points) - 1, count).astype(int)]
 
-    def distances(points: np.ndarray) -> np.ndarray:
-        cell = np.floor((points - low) / resolution).astype(int)
-        inside = np.all((cell >= 0) & (cell < shape), axis=-1)
-        out = np.full(points.shape[:-1], 5.0)
-        valid = cell[inside]
-        out[inside] = field[valid[..., 0], valid[..., 1], valid[..., 2]]
-        return out
+    coarse_model = thin(model, 250)
+    fine_model = thin(model, 700)
+    coarse_shell = _free_space_shell(coarse_model, 250)
+    fine_shell = _free_space_shell(fine_model, 400)
 
-    # A shell around the arm that must be empty. Without it, "the model lies on
-    # a surface" is satisfied just as well by a wall as by the arm.
-    rng = np.random.default_rng(0)
-    directions = rng.normal(size=(len(model) * 2, 3))
-    directions /= np.linalg.norm(directions, axis=1, keepdims=True)
-    shell = np.repeat(model, 2, axis=0) + directions * rng.uniform(0.09, 0.16, (len(model) * 2, 1))
-    shell = shell[cKDTree(model).query(shell, k=1)[0] > 0.07]
-    if len(shell) > 600:
-        shell = shell[rng.choice(len(shell), 600, replace=False)]
-
-    coarse = model if len(model) <= 600 else model[np.linspace(0, len(model) - 1, 600).astype(int)]
-    offsets = np.arange(-search_radius, search_radius + 1e-9, translation_step)
-    grid = np.array([[dx, dy, dz] for dx in offsets for dy in offsets for dz in offsets])
-    candidates = seed + grid
-
-    best = None
-    searched = 0
-    for yaw in np.linspace(0, 2 * np.pi, yaw_steps, endpoint=False):
-        rotation = yaw_matrix(yaw)
-        placed = coarse @ rotation.T
-        empty = shell @ rotation.T
-
-        on_surface = np.minimum(distances(placed[None] + candidates[:, None, :]), 0.10).mean(axis=1)
-        free = np.minimum(distances(empty[None] + candidates[:, None, :]), 0.10).mean(axis=1)
-        score = on_surface - free_space_weight * free
-        searched += len(candidates)
-
-        index = int(np.argmin(score))
-        if best is None or score[index] < best[0]:
-            best = (float(score[index]), yaw, candidates[index].copy())
-
+    best, searched = _sweep(lookup, coarse_model, coarse_shell, seed, search_radius, 0.10,
+                            np.linspace(0, 2 * np.pi, 24, endpoint=False), free_space_weight)
     if best is None:
         return None
+
+    yaws = best[1] + np.linspace(-np.pi / 24, np.pi / 24, 13)
+    refined, more = _sweep(lookup, fine_model, fine_shell, best[2], 0.10, 0.033,
+                           yaws, free_space_weight)
+    searched += more
+    if refined is not None:
+        best = refined
 
     tree = cKDTree(upright)
     rotation = yaw_matrix(best[1])
