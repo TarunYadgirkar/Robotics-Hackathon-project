@@ -1,0 +1,14 @@
+{
+  "agent": "P0",
+  "state": "done",
+  "outputs": [
+    "coordination/FACTS.md"
+  ],
+  "smoke_test": {
+    "cmd": "test -s coordination/FACTS.md && grep -q 'HARDWARE_PRESENT' coordination/FACTS.md",
+    "exit_code": 0,
+    "output_tail": "FACTS.md written with key:value block + prose; all 8 probe steps executed with pasted command output"
+  },
+  "notes": "DATASET_ROOT is the local copy at /Users/tarunyadgirkar/TarunsCode/wc-hack (VERSION 3.1.1, 424 clips, 50 tasks, launch/serve.py present and compiles). WC_VIDEOS must be set to that path for every downstream agent; raw video files are not present locally at all, but extraction is already 100% complete (424/424 parquets, verified via find count). HARDWARE_PRESENT=no (no serial device, lerobot not installed) -> Agent C uses sim fallback. mediapipe==0.10.21 confirmed. cv2 and sounddevice were already installed (0 of 2 allowed installs used). Webcam is BLOCKED by macOS camera TCC permission (not confirmed absent) -- flagged as an in-session risk for Agent E / Beat 4. No confirmed external/headset mic; default is built-in MacBook Pro Microphone -- STT stage-noise risk per plan, --text fallback recommended. ELEVENLABS_API_KEY absent -> say fallback. Probe at 12:29:05 PDT, ~256 min to 16:45 target, ~301 min to 17:30 hard stop.",
+  "ts": "2026-08-30T12:29:05-07:00"
+}
