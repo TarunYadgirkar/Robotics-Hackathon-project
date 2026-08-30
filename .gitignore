@@ -11,3 +11,6 @@ enrollment.json
 *.ply
 *.obj
 workcell_map.npz
+ios/YamEnroll/YamEnroll.xcodeproj/
+ios/**/build/
+DerivedData/

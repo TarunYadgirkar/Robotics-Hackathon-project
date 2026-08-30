@@ -164,28 +164,60 @@ class YamArm:
         self.bus = can_compat.open_bus(channel=channel, bitrate=CAN_BITRATE)
         self._enabled_ids: List[int] = []
         self._last_command: Dict[int, float] = {}
+        #: Diagnostics for the frame-sync problem above: how often an exchange
+        #: needed a second attempt, and how often it gave up entirely.
+        self.resyncs = 0
+        self.failures = 0
 
     # -- transport ---------------------------------------------------------
 
     def _exchange(self, joint: JointConfig, data: Sequence[int], retries: int = 5) -> MotorFeedback:
-        """Send one frame to a motor and return its feedback frame."""
+        """Send one frame to a motor and return its feedback frame.
+
+        The adapter echoes everything we transmit, so the receive queue is never
+        empty and an exchange that reads without resynchronising can fall one
+        frame behind. Once behind, every read returns the *previous* exchange's
+        reply: if that stale frame happens to carry the id being waited on it is
+        accepted, and the caller silently gets a joint angle from a different
+        moment. Retrying blind makes it worse, since each resend pushes another
+        echo and another reply into the queue.
+
+        So the queue is drained before every attempt, echoes are skipped rather
+        than counted, and a failed attempt drains again before resending.
+        """
         expected_id = joint.motor_id + FEEDBACK_ID_OFFSET
         message = can.Message(arbitration_id=joint.motor_id, data=bytearray(data), is_extended_id=False)
+        observed: List[int] = []
 
-        for _ in range(retries):
+        for attempt in range(retries):
+            self._drain()
+            if attempt:
+                self.resyncs += 1
             self.bus.send(message)
+
             deadline = time.time() + self.response_timeout
-            while time.time() < deadline:
-                reply = self.bus.recv(timeout=self.response_timeout)
+            while True:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    break
+                reply = self.bus.recv(timeout=remaining)
                 if reply is None:
                     break
-                # The adapter echoes our own transmissions; only real bus traffic counts.
-                if reply.is_rx and reply.arbitration_id == expected_id:
+                if not reply.is_rx:
+                    continue            # our own transmission, echoed back
+                if reply.arbitration_id == expected_id:
                     return decode_feedback(reply.arbitration_id, reply.data, joint.spec)
+                # Some other motor's reply: note it, keep reading.
+                if len(observed) < 24:
+                    observed.append(reply.arbitration_id)
+
             time.sleep(0.002)
 
+        self.failures += 1
+        seen = ", ".join(f"0x{i:03X}" for i in observed) if observed else "nothing"
         raise MotorCommunicationError(
-            f"no response from {joint.name} (motor id 0x{joint.motor_id:02X}) after {retries} attempts"
+            f"no response from {joint.name} (motor id 0x{joint.motor_id:02X}) after {retries} attempts; "
+            f"expected 0x{expected_id:03X}, saw {seen}"
         )
 
     def _drain(self) -> None:
