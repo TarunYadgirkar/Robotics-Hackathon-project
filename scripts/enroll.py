@@ -18,9 +18,10 @@ import time
 import webbrowser
 from contextlib import contextmanager
 
+import can
 import numpy as np
 
-from yam.arm import ARM_JOINTS, connected_arm
+from yam.arm import ARM_JOINTS, MotorCommunicationError, MotorFaultError, connected_arm
 from yam.enrollment import EnrollmentSession, touch_repeatability
 from yam.kinematics import YamKinematics
 from yam.mesh_export import export_arm_meshes
@@ -62,6 +63,9 @@ def main() -> None:
                         help="0.0.0.0 lets the phone that does the LiDAR scan open the viewer; "
                              "use 127.0.0.1 to keep it on this machine only")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--tunnel", action="store_true",
+                        help="expose the viewer through a Cloudflare quick tunnel, for networks "
+                             "like eduroam that block phone-to-laptop traffic")
     parser.add_argument("--validate-fk", action="store_true",
                         help="touch one fixed point repeatedly and report the spread")
     parser.add_argument("--simulate", action="store_true",
@@ -78,8 +82,22 @@ def main() -> None:
     addresses = server.urls()
 
     print(f"\n  Viewer:      {addresses['local']}")
-    if addresses["lan"]:
-        print(f"  From phone:  {addresses['lan']}   (same wifi; anyone on this network can reach it)")
+    if args.tunnel:
+        # In a thread: bringing the tunnel up takes ~20s, and motors left without
+        # a command stream for that long latch a comms timeout before enrollment
+        # even starts.
+        def announce_tunnel():
+            public = server.start_tunnel()
+            if public:
+                print(f"\n  From phone:  {public}/?k={server.token}")
+                print("               Public URL -- the API is token-guarded, so use the whole link.\n", flush=True)
+            else:
+                print("\n  Tunnel failed to start (is cloudflared installed?).\n", flush=True)
+
+        print("  Opening a public tunnel in the background...", flush=True)
+        threading.Thread(target=announce_tunnel, daemon=True).start()
+    elif addresses["lan"]:
+        print(f"  From phone:  {addresses['lan']}   (same wifi; blocked on eduroam -- use --tunnel)")
     print("  The arm is limp -- support it. Space/Enter captures, U undoes, N next object, F finishes.")
     print("  Scanning with a phone? Keep this running: the arm's pose is logged throughout,")
     print("  so it can be subtracted from the sweep afterwards.\n")
@@ -91,6 +109,7 @@ def main() -> None:
     message = ""
     message_kind = ""
     finished = False
+    consecutive_faults = 0
 
     def simulated_pose(elapsed: float):
         return [
@@ -120,7 +139,29 @@ def main() -> None:
                     q = simulated_pose(time.time() - started)
                     state = None
                 else:
-                    state = arm.read_state()      # zero gains: reading never applies torque
+                    try:
+                        state = arm.read_state()  # zero gains: reading never applies torque
+                    except (MotorCommunicationError, MotorFaultError, can.CanError, OSError) as fault:
+                        # One dropped frame or one latched motor should not end a
+                        # session someone is halfway through. Recover in place and
+                        # say so, rather than losing the captured points.
+                        consecutive_faults += 1
+                        message, message_kind = f"recovering: {fault}", "warn"
+                        print(f"  {fault} -- recovering", flush=True)
+                        if consecutive_faults > 20:
+                            raise
+                        try:
+                            if isinstance(fault, (can.CanError, OSError)):
+                                # The adapter itself went away; motor-level
+                                # recovery cannot work until the bus is back.
+                                arm.reconnect()
+                            arm.recover_stale_motors()
+                            arm.enable()
+                        except Exception:
+                            pass
+                        time.sleep(0.05)
+                        continue
+                    consecutive_faults = 0
                     q = list(state.positions)
                 tip = kinematics.tip_position(q)
                 obstacle = session.current

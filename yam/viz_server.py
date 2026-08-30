@@ -10,8 +10,12 @@ watching, instead of looking away to a terminal.
 import json
 import os
 import queue
+import re
+import secrets
 import socket
+import subprocess
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional
 
@@ -29,6 +33,12 @@ class VizServer:
         self.upload_dir = upload_dir or os.getcwd()
         self.static_payloads: Dict[str, Any] = {}
         self.uploads: list = []
+        #: Guards the API once the server is reachable beyond this machine. The
+        #: page is served freely so it can load and read the token out of its own
+        #: URL; the endpoints that capture points and write files are not.
+        self.token = secrets.token_urlsafe(12)
+        self._tunnel: Optional[subprocess.Popen] = None
+        self.tunnel_url: Optional[str] = None
         self._state: Dict[str, Any] = {"status": "starting"}
         self._lock = threading.Lock()
         self.commands: "queue.Queue[str]" = queue.Queue()
@@ -78,6 +88,16 @@ class VizServer:
             def log_message(self, *args):
                 pass  # the terminal belongs to the enrollment prompts
 
+            def _authorized(self) -> bool:
+                if self.client_address[0] in ("127.0.0.1", "::1"):
+                    return True
+                supplied = self.headers.get("X-Token")
+                if not supplied and "?" in self.path:
+                    from urllib.parse import parse_qs, urlparse
+
+                    supplied = (parse_qs(urlparse(self.path).query).get("k") or [None])[0]
+                return secrets.compare_digest(str(supplied or ""), server.token)
+
             def _send_json(self, payload: Dict[str, Any], code: int = 200) -> None:
                 body = json.dumps(payload).encode()
                 self.send_response(code)
@@ -89,6 +109,9 @@ class VizServer:
 
             def do_GET(self):
                 route = self.path.split("?")[0]
+                if route.startswith("/api/") and not self._authorized():
+                    self._send_json({"error": "unauthorized"}, 401)
+                    return
                 if route == "/api/state":
                     self._send_json(server.snapshot())
                     return
@@ -104,6 +127,9 @@ class VizServer:
                 super().do_GET()
 
             def do_POST(self):
+                if not self._authorized():
+                    self._send_json({"error": "unauthorized"}, 401)
+                    return
                 if self.path.startswith("/api/scan"):
                     self._receive_scan()
                     return
@@ -148,7 +174,39 @@ class VizServer:
         self._thread.start()
         return f"http://127.0.0.1:{self.port}/"
 
+    def start_tunnel(self, timeout: float = 25.0) -> Optional[str]:
+        """Expose the viewer through a Cloudflare quick tunnel.
+
+        Needed on networks with client isolation -- eduroam and most guest wifi
+        will not route phone-to-laptop traffic at all, so a LAN address cannot
+        work no matter how the server is bound. The tunnel URL is public, which
+        is why the API is token-guarded.
+        """
+        try:
+            self._tunnel = subprocess.Popen(
+                ["cloudflared", "tunnel", "--url", f"http://127.0.0.1:{self.port}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, bufsize=1,
+            )
+        except FileNotFoundError:
+            return None
+
+        pattern = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+        deadline = time.time() + timeout
+        while time.time() < deadline and self._tunnel.poll() is None:
+            line = self._tunnel.stderr.readline()
+            if not line:
+                continue
+            match = pattern.search(line)
+            if match:
+                self.tunnel_url = match.group(0)
+                # Keep draining stderr, or cloudflared blocks on a full pipe.
+                threading.Thread(target=lambda: [None for _ in self._tunnel.stderr], daemon=True).start()
+                return self.tunnel_url
+        return None
+
     def stop(self) -> None:
+        if self._tunnel is not None:
+            self._tunnel.terminate()
         if self._server is not None:
             self._server.shutdown()
             self._server.server_close()

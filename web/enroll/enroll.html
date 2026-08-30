@@ -118,6 +118,11 @@
 <script>
 const AZIMUTH = 8, BANDS = 3, PATCHES = AZIMUTH * BANDS;
 
+/* Over a tunnel the API is token-guarded; the token rides in this page's own
+   URL so the link the operator opens is the only thing they need to carry. */
+const TOKEN = new URLSearchParams(location.search).get('k') || '';
+const authHeaders = TOKEN ? {'X-Token': TOKEN} : {};
+
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -198,7 +203,7 @@ const holoMaterial = new THREE.ShaderMaterial({
 });
 holoMaterial.vertexColors = true;
 
-fetch('/api/static/meshes').then(r => r.json()).then(meshes => {
+fetch('/api/static/meshes', {headers: authHeaders}).then(r => r.json()).then(meshes => {
   for (const [name, data] of Object.entries(meshes)){
     if (!data.positions || !data.positions.length) continue;
     const geometry = new THREE.BufferGeometry();
@@ -406,7 +411,7 @@ function toast(text, kind){
 
 async function poll(){
   try{
-    const state = await (await fetch('/api/state')).json();
+    const state = await (await fetch('/api/state', {headers: authHeaders})).json();
     lastSeen = performance.now();
     render(state);
     if (state.status === 'finished') el('prompt').textContent = 'Enrollment saved. You can close this window.';
@@ -415,7 +420,7 @@ async function poll(){
 setInterval(poll, 120); poll();
 
 const send = action => fetch('/api/command', {
-  method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action})
+  method:'POST', headers:{'Content-Type':'application/json', ...authHeaders}, body: JSON.stringify({action})
 }).catch(()=>{});
 
 el('btnCapture').onclick = () => send('capture');
@@ -427,7 +432,7 @@ el('scanFile').addEventListener('change', async event => {
   if (!file) return;
   toast(`uploading ${file.name}…`);
   try{
-    await fetch('/api/scan', {method:'POST', headers:{'X-Filename': file.name}, body: file});
+    await fetch('/api/scan', {method:'POST', headers:{'X-Filename': file.name, ...authHeaders}, body: file});
   }catch(e){ toast('upload failed', 'warn'); }
   event.target.value = '';
 });

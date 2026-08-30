@@ -160,7 +160,8 @@ class YamArm:
         self.joints = list(joints) if joints is not None else list(ARM_JOINTS)
         self.safety = safety or SafetyLimits()
         self.response_timeout = response_timeout
-        self.bus = can.interface.Bus(interface="gs_usb", channel=channel, bitrate=CAN_BITRATE)
+        self.channel = channel
+        self.bus = can_compat.open_bus(channel=channel, bitrate=CAN_BITRATE)
         self._enabled_ids: List[int] = []
         self._last_command: Dict[int, float] = {}
 
@@ -260,11 +261,26 @@ class YamArm:
             self._clear_joint(joint)
         self._drain()
 
+    def reconnect(self) -> None:
+        """Reopen the CAN bus after the adapter drops off USB mid-session.
+
+        The CANable can vanish and re-enumerate under load, which surfaces as
+        USBError 19 on the next send. Everything above this class then sees a
+        dead arm, so the bus object is rebuilt in place rather than making every
+        caller hold a replaceable reference.
+        """
+        try:
+            self.bus.shutdown()
+        except Exception:
+            pass
+        self.bus = can_compat.open_bus(channel=self.channel, bitrate=CAN_BITRATE)
+        self._enabled_ids.clear()
+
     def disable(self) -> None:
         for joint in self.joints:
             try:
                 self._exchange(joint, DISABLE, retries=2)
-            except MotorCommunicationError:
+            except (MotorCommunicationError, can.CanError, OSError):
                 # Best effort: a motor that has already dropped off cannot be told to stop,
                 # and raising here would skip disabling the motors after it.
                 pass
