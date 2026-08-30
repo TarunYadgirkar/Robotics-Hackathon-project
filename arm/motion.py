@@ -41,6 +41,12 @@ class Trajectory:
     waypoints: tuple[Waypoint, ...]
     notes: str = ""
     frame: str = FRAME_ABSOLUTE
+    #: The gripper column can be absolute while the joints stay relative. A can
+    #: is 66 mm across no matter where the jaws happen to be resting, so a jaw
+    #: opening is a physical fact, not an offset — and the jaws' resting percent
+    #: drifts between runs (their open stop is compliant), which made a relative
+    #: target resolve past 100% and refuse the motion.
+    gripper_frame: str = FRAME_RELATIVE
 
     @property
     def duration(self) -> float:
@@ -71,6 +77,9 @@ def load_trajectory(path: str | Path) -> Trajectory:
         raise TrajectoryError(f"{path}: no waypoints")
 
     frame = data.get("frame", FRAME_ABSOLUTE)
+    gripper_frame = data.get("gripper_frame", FRAME_RELATIVE)
+    if gripper_frame not in (FRAME_ABSOLUTE, FRAME_RELATIVE):
+        raise TrajectoryError(f"{path}: gripper_frame must be 'absolute' or 'relative'")
     if frame not in (FRAME_ABSOLUTE, FRAME_RELATIVE):
         raise TrajectoryError(f"{path}: frame must be 'absolute' or 'relative', got {frame!r}")
 
@@ -103,6 +112,7 @@ def load_trajectory(path: str | Path) -> Trajectory:
         waypoints=tuple(waypoints),
         notes=data.get("notes", ""),
         frame=frame,
+        gripper_frame=gripper_frame,
     )
 
 
@@ -122,15 +132,20 @@ def scale_amplitude(traj: Trajectory, factor: float) -> Trajectory:
         )
     if not 0.0 < factor <= 1.0:
         raise TrajectoryError(f"amplitude must be in (0, 1], got {factor}")
+    def scaled(w):
+        vals = tuple(v * factor for v in w.positions)
+        if traj.gripper_frame == FRAME_ABSOLUTE:
+            # an absolute jaw target is a physical gap, not an amplitude
+            vals = vals[:-1] + (w.positions[-1],)
+        return Waypoint(t=w.t, positions=vals, label=w.label)
+
     return Trajectory(
         name=traj.name,
         source=traj.source,
-        waypoints=tuple(
-            Waypoint(t=w.t, positions=tuple(v * factor for v in w.positions), label=w.label)
-            for w in traj.waypoints
-        ),
+        waypoints=tuple(scaled(w) for w in traj.waypoints),
         notes=traj.notes,
         frame=traj.frame,
+        gripper_frame=traj.gripper_frame,
     )
 
 
@@ -144,9 +159,12 @@ def resolve_relative(traj: Trajectory, current: tuple[float, ...]) -> Trajectory
     """
     if not traj.is_relative:
         return traj
+    gripper_absolute = traj.gripper_frame == FRAME_ABSOLUTE
     resolved = []
     for i, w in enumerate(traj.waypoints):
         positions = tuple(base + delta for base, delta in zip(current, w.positions))
+        if gripper_absolute:
+            positions = positions[:-1] + (w.positions[-1],)
         violations = model.check_limits(positions, base=current)
         if violations:
             raise SoftLimitError(
@@ -192,14 +210,14 @@ def scale_speed(traj: Trajectory, speed: float) -> Trajectory:
     )
 
 
-def enforce_velocity_cap(traj: Trajectory) -> tuple[Trajectory, list[str]]:
+def enforce_velocity_cap(traj: Trajectory, caps: dict | None = None) -> tuple[Trajectory, list[str]]:
     """Stretch any segment that would exceed the per-joint cap.
 
     Time dilation, never position clipping: the path through space is preserved
     exactly and only the schedule slows down. Returns the corrected trajectory
     plus a report of every segment that had to be slowed.
     """
-    caps = model.velocity_cap_deg_s()
+    caps = caps or model.velocity_cap_deg_s()
     report: list[str] = []
     out = [traj.waypoints[0]]
     t_cursor = traj.waypoints[0].t
@@ -259,7 +277,7 @@ def peak_velocities(setpoints: list[tuple[float, tuple[float, ...]]]) -> dict[st
 
 
 def prepare(
-    traj: Trajectory, speed: float, hz: float = model.CONTROL_HZ
+    traj: Trajectory, speed: float, hz: float = model.CONTROL_HZ, caps: dict | None = None
 ) -> tuple[Trajectory, list[tuple[float, tuple[float, ...]]], list[str]]:
     """Scale, cap, interpolate — the one path every backend uses.
 
@@ -268,5 +286,5 @@ def prepare(
     per second, so the rate is part of the safety arithmetic).
     """
     scaled = scale_speed(traj, speed)
-    capped, report = enforce_velocity_cap(scaled)
+    capped, report = enforce_velocity_cap(scaled, caps)
     return capped, to_setpoints(capped, hz), report

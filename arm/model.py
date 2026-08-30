@@ -97,14 +97,23 @@ HW_JOINT1_LOCKED_DEG = 2.0
 #: against the MuJoCo checker and reports where it stops being free.
 HW_PER_JOINT_EXCURSION_DEG = {
     "joint1": HW_JOINT1_LOCKED_DEG,  # locked; see above
-    "joint2": 30.0,   # measured free to +38 before the clamp zone; rest sits on its 0.0 bound
+    "joint2": 35.0,   # measured free to +38 before the clamp zone; rest sits on its 0.0 bound
     "joint3": 60.0,   # measured free across its whole range from rest
     "joint4": 55.0,   # measured +94 free; negative freedom depends on joint3 being lifted first
     "joint5": 45.0,   # measured -103 / +51
-    "joint6": 60.0,   # measured -131 / +108
+    "joint6": 90.0,   # measured -131 / +108; the can-inversion roll needs 75
 }
 HW_SLOW_SPEED_DEG_S = 28.0       # raised so full-range gestures flow; still visibly deliberate
 HW_GRIPPER_GENTLE_PCT_S = 12.0   # far below the sim cap; the jaws move slowly
+
+#: Gripper torque ceiling for the demo, BELOW yam.arm's calibrated 0.6 Nm.
+#: 0.6 Nm is ~41 N of grip, which Boris sized for actually holding things. The
+#: demo never lifts anything — the can beat is a pantomime — and 41 N is inside
+#: the range that dents an EMPTY aluminium can if the jaws ever do close on one.
+#: 0.25 Nm is ~17 N: enough to feel deliberate, not enough to crush an empty can.
+#: Applied by replacing yam.arm.GRIPPER_JOINT's max_torque at connect time; the
+#: calibrated position stops are untouched.
+HW_GRIPPER_MAX_TORQUE_NM = 0.25
 HW_GAIN_SCALE = 0.5              # yam.arm gain_scale: softer than the SDK default
 
 
@@ -131,8 +140,20 @@ JOINT2_SELF_COLLISION_DEG = 105.0
 JOINT2_AUTHORED_CEILING_DEG = 45.0
 
 
-def velocity_cap_deg_s() -> dict[str, float]:
-    return {j: MAX_VEL_DEG_S[j] * VELOCITY_CAP_FRACTION for j in JOINT_NAMES}
+def velocity_cap_deg_s(hardware: bool = False) -> dict[str, float]:
+    """Per-channel speed ceiling. On hardware the jaws get the gentle limit.
+
+    This belongs in the CAP, not only in a post-hoc validator: the cap is what
+    time-dilates a too-fast segment, so putting the gentle jaw limit here means
+    an over-quick jaw move is slowed down automatically instead of refused. The
+    approach lead-in from wherever the jaws are resting is exactly such a move.
+    """
+    caps = {j: MAX_VEL_DEG_S[j] * VELOCITY_CAP_FRACTION for j in JOINT_NAMES}
+    if hardware:
+        caps[GRIPPER_NAME] = HW_GRIPPER_GENTLE_PCT_S
+        for joint in ARM_JOINT_NAMES:
+            caps[joint] = min(caps[joint], HW_SLOW_SPEED_DEG_S)
+    return caps
 
 
 def to_yam_radians(positions) -> list[float]:

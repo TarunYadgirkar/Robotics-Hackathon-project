@@ -176,7 +176,9 @@ def validate_hardware_motion(setpoints, label: str) -> dict:
             speed = abs(q1[i] - q0[i]) / dt
             if speed > peak_arm_speed:
                 peak_arm_speed, fastest_joint = speed, name
-    if peak_arm_speed > model.HW_SLOW_SPEED_DEG_S:
+    # tolerance: the cap time-dilates a segment to exactly this ceiling, and the
+    # result lands a few ULPs above it. Refusing that is a float bug, not a safety win.
+    if peak_arm_speed > model.HW_SLOW_SPEED_DEG_S * (1 + 1e-6):
         raise HardwareMotionRefused(
             f"{label}: refused on hardware — {fastest_joint} would run at {peak_arm_speed:.1f} deg/s, "
             f"above the {model.HW_SLOW_SPEED_DEG_S} deg/s slow-motion ceiling for this arm"
@@ -187,7 +189,7 @@ def validate_hardware_motion(setpoints, label: str) -> dict:
         dt = t1 - t0
         if dt > 0:
             peak_gripper = max(peak_gripper, abs(q1[-1] - q0[-1]) / dt)
-    if peak_gripper > model.HW_GRIPPER_GENTLE_PCT_S:
+    if peak_gripper > model.HW_GRIPPER_GENTLE_PCT_S * (1 + 1e-6):
         raise HardwareMotionRefused(
             f"{label}: refused on hardware — gripper would move at {peak_gripper:.1f} %/s, above the "
             f"gentle limit of {model.HW_GRIPPER_GENTLE_PCT_S} %/s"
@@ -375,8 +377,14 @@ class YamBackend:
         from yam.arm import ARM_JOINTS, GRIPPER_JOINT, SafetyLimits, YamArm
 
         if self._arm is None:
+            import dataclasses
+
+            # Same calibrated stops, lower squeeze. See HW_GRIPPER_MAX_TORQUE_NM.
+            gentle_gripper = dataclasses.replace(
+                GRIPPER_JOINT, max_torque=model.HW_GRIPPER_MAX_TORQUE_NM
+            )
             self._arm = YamArm(
-                joints=list(ARM_JOINTS) + [GRIPPER_JOINT],
+                joints=list(ARM_JOINTS) + [gentle_gripper],
                 safety=SafetyLimits(gain_scale=model.HW_GAIN_SCALE),
             )
         return self._arm

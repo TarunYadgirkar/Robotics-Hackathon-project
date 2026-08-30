@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "name": "can_grip_top",
+  "source": "sim-authored",
+  "notes": "SIM counterpart. The 'put this can upside down' beat, top-rim version. Reaches out, hovers, descends to just above the rim, closes the jaws partway as if taking the rim, then ROLLS THE WRIST 75 deg",
+  "joint_names": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "gripper"
+  ],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {
+      "t": 0.0,
+      "positions": [
+        2.854,
+        0.0,
+        0.0,
+        -5.191,
+        4.205,
+        67.07,
+        20.0
+      ],
+      "label": "resting pose"
+    },
+    {
+      "t": 3.0,
+      "positions": [
+        2.854,
+        15.0,
+        4.0,
+        2.809,
+        4.205,
+        67.07,
+        53.0
+      ],
+      "label": "open the jaws, start the reach"
+    },
+    {
+      "t": 4.5,
+      "positions": [
+        2.854,
+        30.0,
+        8.0,
+        9.809,
+        4.205,
+        67.07,
+        53.0
+      ],
+      "label": "hover over the can"
+    },
+    {
+      "t": 5.8,
+      "positions": [
+        2.854,
+        30.0,
+        0.0,
+        4.809,
+        4.205,
+        67.07,
+        53.0
+      ],
+      "label": "descend to the rim"
+    },
+    {
+      "t": 7.3,
+      "positions": [
+        2.854,
+        30.0,
+        0.0,
+        4.809,
+        4.205,
+        67.07,
+        46.0
+      ],
+      "label": "close partway on the rim"
+    },
+    {
+      "t": 10.5,
+      "positions": [
+        2.854,
+        30.0,
+        0.0,
+        4.809,
+        4.205,
+        -7.93,
+        46.0
+      ],
+      "label": "roll the wrist \u2014 turning it over"
+    },
+    {
+      "t": 12.3,
+      "positions": [
+        2.854,
+        30.0,
+        0.0,
+        4.809,
+        4.205,
+        -7.93,
+        53.0
+      ],
+      "label": "let go"
+    },
+    {
+      "t": 15.3,
+      "positions": [
+        2.854,
+        30.0,
+        8.0,
+        9.809,
+        4.205,
+        67.07,
+        53.0
+      ],
+      "label": "unroll and lift away"
+    },
+    {
+      "t": 18.8,
+      "positions": [
+        2.854,
+        0.0,
+        0.0,
+        -5.191,
+        4.205,
+        67.07,
+        20.0
+      ],
+      "label": "withdraw"
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "name": "can_grip_bottom",
+  "source": "hardware-authored (relative, whole-arm, joint1 locked)",
+  "frame": "relative",
+  "notes": "The same beat with the LOWEST descent the arm can safely make. HONEST LIMIT: a body-height grip is NOT achievable. Searched with the collision checker, no pose that puts the tip at can-body height (4-8 cm) is collision-free from this mount, so 'bottom' here means 13.2 cm \u2014 the lowest verified height, still 1.0 cm ABOVE the can's top rim rather than around its body. It differs from can_grip_top by 1.6 cm of descent, which reads as a deeper, more committed reach. Peak 25 deg/s. JOINT1 IS ZERO IN EVERY WAYPOINT (base locked, clamps). Offsets from the resting pose. GEOMETRY, computed with the official i2rt URDF via yam.kinematics and checked against the MuJoCo collision model: the hover pose puts the jaw tip 20.6 cm above the table at 14.8 cm radial reach; the descent puts it 14.8 cm up (top) or 12.4 cm up (lower). A 355ml can is 12.2 cm tall and 6.6 cm across, so EVERY pose here stays above the can's top rim \u2014 no pose can strike the can body. The jaws rest at ~65% open, which is NARROWER than a 6.6 cm can, so the gesture opens them to ~85% BEFORE descending and only closes to ~72% (a 6.8 cm gap, ~2 mm clear of the can). Contact is therefore not required and not expected; if the can is a little proud, the jaws touch it at Boris's calibrated cap and nothing more. The descent was backed off 3 deg on joint4 after verification measured only 1 mm of self-collision clearance at the deeper pose; 1 mm is not a margin worth having on stage. JAW NUMBERS CORRECTED after measuring the real calibrated stroke: usable travel is 76 mm (not the 96 mm nominal), so a 66 mm can occupies 86.6% of the stroke, not 69%. An earlier draft closed to 72% \u2014 that is a 55 mm gap and WOULD have squeezed the can at the force cap. The jaws now open to 98% (74.5 mm) and close only to 91% (69.2 mm), about 3 mm clear of the can. Separately the gripper's torque ceiling is lowered from Boris's calibrated 0.6 Nm (~41 N) to 0.25 Nm (~17 N) for the demo, so even an unintended contact cannot dent an empty can. JAW TARGETS ARE ABSOLUTE (gripper_frame: absolute), unlike the joint columns: a can is 66 mm across regardless of where the jaws are resting, and their resting percent drifts between runs because the open stop is compliant \u2014 a relative target resolved past 100% and refused the motion mid-session. Absolute values: 88% neutral, 98% open (74.5 mm), 90% at the 'grip' (68.4 mm, ~2 mm clear of the can). HONEST LIMIT: usable jaw travel is 76 mm and the can is 66 mm, so there is only ~10 mm of margin in the whole stroke \u2014 a big visible open-and-close around this can is not physically available. The wrist roll carries the inversion; the jaws only gesture at it.",
+  "joint_names": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "gripper"
+  ],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {
+      "t": 0.0,
+      "positions": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        88.0
+      ],
+      "label": "resting pose"
+    },
+    {
+      "t": 3.0,
+      "positions": [
+        0.0,
+        15.0,
+        4.0,
+        8.0,
+        0.0,
+        0.0,
+        98.0
+      ],
+      "label": "open the jaws, start the reach"
+    },
+    {
+      "t": 4.5,
+      "positions": [
+        0.0,
+        30.0,
+        8.0,
+        15.0,
+        0.0,
+        0.0,
+        98.0
+      ],
+      "label": "hover over the can"
+    },
+    {
+      "t": 6.0,
+      "positions": [
+        0.0,
+        30.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        98.0
+      ],
+      "label": "descend lower, deeper reach"
+    },
+    {
+      "t": 7.5,
+      "positions": [
+        0.0,
+        30.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        90.0
+      ],
+      "label": "close partway"
+    },
+    {
+      "t": 10.7,
+      "positions": [
+        0.0,
+        30.0,
+        0.0,
+        0.0,
+        0.0,
+        -75.0,
+        90.0
+      ],
+      "label": "roll the wrist \u2014 turning it over"
+    },
+    {
+      "t": 12.5,
+      "positions": [
+        0.0,
+        30.0,
+        0.0,
+        0.0,
+        0.0,
+        -75.0,
+        98.0
+      ],
+      "label": "let go"
+    },
+    {
+      "t": 15.5,
+      "positions": [
+        0.0,
+        30.0,
+        8.0,
+        15.0,
+        0.0,
+        0.0,
+        98.0
+      ],
+      "label": "unroll and lift away"
+    },
+    {
+      "t": 19.0,
+      "positions": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        88.0
+      ],
+      "label": "withdraw"
+    }
+  ],
+  "gripper_frame": "absolute"
+}

@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "name": "approach_can",
+  "source": "sim-authored",
+  "notes": "SIM counterpart. Reach out and hover over the can, jaws open, then withdraw. Used to SHOW the operator where to place the can: run it, watch where the jaws stop, put the can directly underneath. Ti",
+  "joint_names": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "gripper"
+  ],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {
+      "t": 0.0,
+      "positions": [
+        2.854,
+        0.0,
+        0.0,
+        -5.191,
+        4.205,
+        67.07,
+        20.0
+      ],
+      "label": "resting pose"
+    },
+    {
+      "t": 3.0,
+      "positions": [
+        2.854,
+        15.0,
+        4.0,
+        2.809,
+        4.205,
+        67.07,
+        53.0
+      ],
+      "label": "open the jaws, start the reach"
+    },
+    {
+      "t": 4.5,
+      "positions": [
+        2.854,
+        30.0,
+        8.0,
+        9.809,
+        4.205,
+        67.07,
+        53.0
+      ],
+      "label": "hover over the can"
+    },
+    {
+      "t": 6.5,
+      "positions": [
+        2.854,
+        30.0,
+        8.0,
+        9.809,
+        4.205,
+        67.07,
+        53.0
+      ],
+      "label": "hold the hover \u2014 this is the spot"
+    },
+    {
+      "t": 9.8,
+      "positions": [
+        2.854,
+        0.0,
+        0.0,
+        -5.191,
+        4.205,
+        67.07,
+        20.0
+      ],
+      "label": "withdraw"
+    }
+  ]
+}

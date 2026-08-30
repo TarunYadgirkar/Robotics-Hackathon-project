@@ -18,7 +18,11 @@ _GESTURE_ROOT = Path(__file__).resolve().parent / "gestures"
 #: it. Added to the frozen set rather than smuggled in as a replay path so
 #: callers keep using gesture(name) for everything expressive.
 #: "wake" is the startup showcase, played once when the demo opens.
-GESTURE_NAMES = ("wake", "attention", "decline", "point_screen", "attempt")
+#: The can-prop gestures are hardware-only pantomime: every pose stays above the
+#: can's top rim (see their notes), so they read on stage without needing contact.
+CAN_GESTURE_NAMES = ("approach_can", "can_grip_top", "can_grip_bottom")
+
+GESTURE_NAMES = ("wake", "attention", "decline", "point_screen", "attempt") + CAN_GESTURE_NAMES
 
 APPROACH_LEAD_S = 0.6  # nominal move-to-start time; the cap stretches it if needed
 POSE_TOLERANCE_DEG = 0.5
@@ -124,7 +128,10 @@ def _execute(label: str, traj: motion.Trajectory, speed: float, amplitude: float
     if amplitude != 1.0:
         traj = motion.scale_amplitude(traj, amplitude)
     resolved = motion.resolve_relative(traj, _backend.current_positions())
-    capped, setpoints, report = motion.prepare(_with_approach(resolved), speed, _backend.control_hz())
+    capped, setpoints, report = motion.prepare(
+        _with_approach(resolved), speed, _backend.control_hz(),
+        caps=model.velocity_cap_deg_s(hardware=_backend.is_hardware),
+    )
     _backend.begin_motion(label, capped, setpoints, report)
     final = safety.run_motion(
         setpoints,
