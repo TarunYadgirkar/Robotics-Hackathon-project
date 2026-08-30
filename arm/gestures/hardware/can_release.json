@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "name": "can_release",
+  "source": "hardware-authored (relative, whole-arm, joint1 locked)",
+  "frame": "relative",
+  "notes": "Gentle put-down for when the human declines the fling while the arm is holding the can (can_pickup's carrying pose). Lowers a little in joint4, opens the jaws well past the 66 mm can at 9.3 %/s (hardware cap 12), lets it drop the short distance to the table, then returns to its own start pose with jaws at 88 neutral. All joint2/joint3 offsets are >= 0 (soft floors) and the gesture ends where it began — same sag-proof rule as can_fling. JOINT1 ZERO IN EVERY WAYPOINT (base clamped).",
+  "joint_names": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "gripper"
+  ],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {
+      "t": 0.0,
+      "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 84.0],
+      "label": "carrying pose (can in hand)"
+    },
+    {
+      "t": 1.5,
+      "positions": [0.0, 0.0, 0.0, -5.0, 0.0, 0.0, 84.0],
+      "label": "lower toward the table"
+    },
+    {
+      "t": 3.0,
+      "positions": [0.0, 0.0, 0.0, -5.0, 0.0, 0.0, 98.0],
+      "label": "open — let the can go gently"
+    },
+    {
+      "t": 5.0,
+      "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 88.0],
+      "label": "back to the start pose, jaws neutral"
+    }
+  ],
+  "gripper_frame": "absolute"
+}

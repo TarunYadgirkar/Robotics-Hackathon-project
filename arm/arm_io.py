@@ -18,9 +18,12 @@ _GESTURE_ROOT = Path(__file__).resolve().parent / "gestures"
 #: it. Added to the frozen set rather than smuggled in as a replay path so
 #: callers keep using gesture(name) for everything expressive.
 #: "wake" is the startup showcase, played once when the demo opens.
-#: The can-prop gestures are hardware-only pantomime: every pose stays above the
-#: can's top rim (see their notes), so they read on stage without needing contact.
-CAN_GESTURE_NAMES = ("approach_can", "can_grip_top", "can_grip_bottom", "can_pickup", "can_fling")
+#: approach_can and the two can_grip gestures are pantomime — every pose stays
+#: above the can's top rim (see their notes). can_pickup, can_fling and
+#: can_release are NOT: pickup closes to 63.8mm on the 66mm can (a real 17N
+#: grip) and the other two play from its carrying pose to let the can go.
+CAN_GESTURE_NAMES = ("approach_can", "can_grip_top", "can_grip_bottom",
+                     "can_pickup", "can_fling", "can_release")
 
 GESTURE_NAMES = ("wake", "attention", "decline", "point_screen", "attempt") + CAN_GESTURE_NAMES
 

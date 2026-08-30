@@ -104,7 +104,7 @@ def main() -> int:
     # Gestures that play from another gesture's END pose, not from rest — a
     # from-rest resolve is not just the wrong geometry, it violates soft limits
     # (can_fling ends 30 deg of joint2 below where it starts, by design).
-    follows = {"can_fling": "can_pickup"}
+    follows = {"can_fling": "can_pickup", "can_release": "can_pickup"}
 
     failures = 0
     for name in (*arm_io.GESTURE_NAMES, "task_demo"):

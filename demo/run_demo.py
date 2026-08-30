@@ -1029,6 +1029,19 @@ def say_line(st, text, label):
     st.history.append({"role": "robot", "text": spoken})
 
 
+def _put_down(st, label, why):
+    """The human said no while the arm holds the can: put it down gently."""
+    say(f"{GRN}  {why} — releasing the can gently, no fling{OFF}")
+    st.log(f"{label}: {why}; can_release ran instead of can_fling")
+    say_line(st, "Putting it down.", f"{label}-down")
+    name, secs, traj, fb = _gesture(st, "can_release", "attempt", 5.0)
+    arm_motion(st, "replay", name, secs, path=traj)
+    if fb:
+        say(f"{YEL}  NOTE: can_release.json missing — 'attempt' ran instead; the jaws "
+            f"did NOT open. Ctrl-C and recover by hand.{OFF}")
+    return True
+
+
 def flip_beat(st, transcript, label="flip"):
     """Pick the can up FOR REAL (can_pickup grips at 17 N and holds), get told to
     flip, honestly abstain — 'flip' matches zero of the 50 task names — then take
@@ -1049,9 +1062,15 @@ def flip_beat(st, transcript, label="flip"):
     heard = None
     for attempt in range(2):
         ans = capture_query(st, "flip", f"{label}-cmd{attempt or ''}", seconds=6) or ""
-        if _tokens(ans) & FLIP_WORDS:
+        toks = _tokens(ans)
+        if toks & FLIP_WORDS:
             heard = ans
             break
+        # "hold" excluded: it names the grip in this beat ("keep holding"), so it
+        # cannot count as a stop-word here — same reasoning as classify_reply's
+        # both-sets-unrecognized rule, applied to this beat's vocabulary.
+        if (toks & NEGATIVE) - {"hold"}:
+            return _put_down(st, label, "human declined at the flip prompt")
         if attempt == 0:
             say_line(st, "I am holding the can. What should I do with it?", f"{label}-reask")
     if heard is None:
@@ -1069,25 +1088,37 @@ def flip_beat(st, transcript, label="flip"):
         path = _not_understood_decision()
         say_line(st, "I don't know how to do that. How do I do it?", f"{label}-flip")
 
-    answer = ""
-    go = False
-    for attempt in range(2):
+    # Same discipline as classify_reply: a reply hitting BOTH sets ("no, don't
+    # throw it up") is unrecognized — ask again, never guess toward a throw.
+    # "hold" is this beat's grip word, not a stop word.
+    answer, verdict = "", None
+    for attempt in range(3):
         answer = capture_query(st, "hold it at the top", f"{label}-how{attempt or ''}",
                                seconds=6) or ""
         toks = _tokens(answer)
-        if toks & RELEASE_TOP:
-            go = True
+        top, neg = toks & RELEASE_TOP, (toks & NEGATIVE) - {"hold"}
+        say(f"{DIM}  release answer {answer!r} -> top={sorted(top)} neg={sorted(neg)}{OFF}")
+        st.log(f"{label} release answer {answer!r} -> top={sorted(top)} neg={sorted(neg)}")
+        if top and not neg:
+            verdict = "go"
             break
-        if toks & NEGATIVE and "hold" not in toks:
-            say(f"{GRN}  human said stop — keeping the can held, not flinging{OFF}")
-            st.log(f"{label}: human declined the fling; arm keeps holding")
-            say_line(st, "Holding. Say the word when you want it back.", f"{label}-stop")
-            return True
+        if neg and not top:
+            verdict = "down"
+            break
         if attempt == 0:
             say_line(st, "Tell me where to hold it.", f"{label}-how-reask")
-    if not go:
-        say(f"{YEL}  no 'top' keyword after 2 tries — defaulting to the release, per plan{OFF}")
-        st.log(f"{label}: release defaulted after 2 unrecognized answers")
+        elif attempt == 1:
+            say_line(st, "Say top and I let it go on the way up. Say stop and I put "
+                         "it down.", f"{label}-how-reask2")
+    if verdict == "down":
+        return _put_down(st, label, "human declined the release")
+    if verdict is None:
+        # Unrecognized three times: the safe default is the gentle put-down, not
+        # the throw — the inverse of can_beat's default-to-top, because here the
+        # default moves a held object fast.
+        say(f"{YEL}  three unrecognized answers — putting the can down instead of "
+            f"guessing toward a throw{OFF}")
+        return _put_down(st, label, "release defaulted to put-down after 3 unrecognized")
 
     say_line(st, "Hold it at the top and let go on the way up. If it does not land, "
                  "that is the data.", f"{label}-ack")
