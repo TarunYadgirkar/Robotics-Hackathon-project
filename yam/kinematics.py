@@ -126,6 +126,10 @@ class YamKinematics:
     """Forward kinematics for the 6 driven arm joints."""
 
     ARM_JOINT_NAMES = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+    #: The two jaws, driven together off the single gripper motor.
+    JAW_JOINT_NAMES = ["joint7", "joint8"]
+    #: Prismatic travel of one jaw, from the URDF limit. 0 is fully open.
+    JAW_TRAVEL = 0.04695
 
     def __init__(self, urdf_path: str = DEFAULT_URDF, load_geometry: bool = True):
         self.urdf_path = os.path.normpath(urdf_path)
@@ -185,12 +189,22 @@ class YamKinematics:
             centers, radii = fit_spheres(points)
             self.link_geometry[name] = LinkGeometry(name, centers, radii)
 
-    def link_transforms(self, q: Sequence[float]) -> Dict[str, np.ndarray]:
-        """World transform of every link, given the 6 arm joint angles."""
+    def link_transforms(self, q: Sequence[float], gripper_opening: float = 1.0) -> Dict[str, np.ndarray]:
+        """World transform of every link.
+
+        `gripper_opening` runs 0 (closed) to 1 (open). It defaults to open, which
+        is the conservative choice for collision -- open jaws sweep the larger
+        volume -- but it must be supplied to place the jaws correctly, and
+        anything reasoning about where the jaws actually are needs to pass it.
+        Leaving the jaw joints at 0 models a closed gripper 84mm too wide.
+        """
         if len(q) != len(self.ARM_JOINT_NAMES):
             raise ValueError(f"expected {len(self.ARM_JOINT_NAMES)} angles, got {len(q)}")
 
         angles = dict(zip(self.ARM_JOINT_NAMES, q))
+        jaw = -(1.0 - min(max(gripper_opening, 0.0), 1.0)) * self.JAW_TRAVEL
+        for name in self.JAW_JOINT_NAMES:
+            angles[name] = jaw
         frames: Dict[str, np.ndarray] = {"base": np.eye(4)}
 
         for name in self.joint_order:
@@ -201,13 +215,31 @@ class YamKinematics:
         return frames
 
     def tip_position(self, q: Sequence[float]) -> np.ndarray:
-        """World position of the gripper frame origin."""
+        """World position of the gripper frame origin.
+
+        Independent of jaw opening: this is the wrist frame the jaws hang off,
+        which is what makes it a stable probe point for enrollment.
+        """
         return self.link_transforms(q)["gripper"][:3, 3]
 
+    def jaw_gap(self, q: Sequence[float], gripper_opening: float = 1.0) -> float:
+        """Opening between the jaws in metres, measured along the axis they travel.
+
+        Not the 3D distance between the two tip frames: those origins also sit
+        ~48mm apart laterally, an offset the jaws never close, so a plain norm
+        reports a gap that cannot go below 48mm and never reaches zero.
+        """
+        frames = self.link_transforms(q, gripper_opening)
+        gripper = frames["gripper"]
+        travel_axis = gripper[:3, 1]   # jaws slide along the gripper frame's Y
+        separation = frames["tip_left"][:3, 3] - frames["tip_right"][:3, 3]
+        return float(abs(separation @ travel_axis))
+
     def collision_spheres(self, q: Sequence[float],
-                          links: Optional[Sequence[str]] = None) -> Tuple[np.ndarray, np.ndarray]:
+                          links: Optional[Sequence[str]] = None,
+                          gripper_opening: float = 1.0) -> Tuple[np.ndarray, np.ndarray]:
         """Collision spheres in world coordinates, optionally for a subset of links."""
-        frames = self.link_transforms(q)
+        frames = self.link_transforms(q, gripper_opening)
         selected = None if links is None else set(links)
         centers, radii = [], []
         for name, geometry in self.link_geometry.items():

@@ -16,6 +16,7 @@ import can
 
 from yam import can_compat  # noqa: F401  (patches gs_usb for macOS)
 from yam.dm_motor import (
+    CLEAR_ERROR,
     DISABLE,
     ENABLE,
     FEEDBACK_ID_OFFSET,
@@ -75,8 +76,41 @@ ARM_JOINTS: List[JointConfig] = [
 # * Being inside the joint limits does NOT mean a pose is safe: about 10% of
 #   random in-limit poses self-collide. Nothing in this module checks that; use
 #   yam.environment.ArmSafetyChecker.
+# * An enabled motor that stops receiving commands latches error 0xD
+#   ("communication lost"). Measured: 20Hz polling with 0.3-0.4s silent gaps
+#   latched the gripper; 100Hz with zero-torque frames through the gaps did not,
+#   across five cycles. Anything that enables motors and then waits -- on a human,
+#   on a file, on a network -- must keep streaming frames while it waits. The
+#   error survives disable/enable and needs clear_errors().
 
-GRIPPER_JOINT = JointConfig("gripper", 0x07, "DM4310", -3.2, 3.2, kp=5.0, kd=0.5, max_torque=3.0)
+#: Jaw travel per radian of motor, from linear_4310.yml (motor_stroke 6.57 rad
+#: over gripper_stroke 0.096 m). Torque in Nm is grip force in newtons times this.
+GRIPPER_METRES_PER_RAD = 0.096 / 6.57
+
+#: Measured on this arm with the jaws currently fitted, 5 cycles at 0.2/0.35/0.5Nm.
+#: The closed stop is a true hard stop and repeats to 0.1mm, so it is the datum.
+#: The open stop is compliant -- it drifts 1.3mm as torque rises -- so it is not.
+GRIPPER_CLOSED_POSITION = -5.158
+GRIPPER_OPEN_POSITION = 0.056
+
+#: Limits backed off 50mrad from each measured stop. kp is the SDK's 20.0, not the
+#: 5.0 guessed here earlier. max_torque 0.6Nm is about 41N of grip; the 3.0Nm that
+#: stood here allowed roughly 205N, which is a lot of force for a jaw to close with.
+GRIPPER_JOINT = JointConfig(
+    "gripper", 0x07, "DM4310",
+    GRIPPER_CLOSED_POSITION + 0.05, GRIPPER_OPEN_POSITION - 0.05,
+    kp=20.0, kd=0.5, max_torque=0.6,
+)
+
+
+def gripper_force_to_torque(newtons: float) -> float:
+    return newtons * GRIPPER_METRES_PER_RAD
+
+
+def gripper_opening_fraction(position: float) -> float:
+    """0.0 fully closed, 1.0 fully open, from the motor angle."""
+    span = GRIPPER_OPEN_POSITION - GRIPPER_CLOSED_POSITION
+    return float(min(max((position - GRIPPER_CLOSED_POSITION) / span, 0.0), 1.0))
 
 
 class MotorCommunicationError(RuntimeError):
@@ -166,6 +200,21 @@ class YamArm:
             self._enabled_ids.append(joint.motor_id)
             self._last_command[joint.motor_id] = fb.position
         return self._to_state(feedback)
+
+    def clear_errors(self) -> None:
+        """Clear latched motor error words.
+
+        Sent blind and repeated: a motor in a fault state may not answer, and the
+        point of this call is to reach one that has stopped talking. Follow with
+        enable() -- clearing the error does not re-enable the motor.
+        """
+        for joint in self.joints:
+            for _ in range(3):
+                self.bus.send(can.Message(
+                    arbitration_id=joint.motor_id, data=bytearray(CLEAR_ERROR), is_extended_id=False
+                ))
+                time.sleep(0.002)
+        self._drain()
 
     def disable(self) -> None:
         for joint in self.joints:

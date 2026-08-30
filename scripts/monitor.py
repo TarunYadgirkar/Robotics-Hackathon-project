@@ -29,11 +29,17 @@ def main() -> None:
 
         deadline = time.time() + duration
         start = time.time()
+        next_print = 0.0
+        # Read continuously and print on the interval, rather than reading on the
+        # interval. An enabled motor that stops receiving frames latches error
+        # 0xD; polling at 4Hz with quarter-second gaps is exactly that condition.
         while time.time() < deadline:
             state = arm.read_state()
-            degrees = "  ".join(f"{math.degrees(p):>9.2f}" for p in state.positions)
-            print(f"{time.time() - start:>6.1f}  {degrees}", flush=True)
-            time.sleep(args.interval)
+            elapsed = time.time() - start
+            if elapsed >= next_print:
+                degrees = "  ".join(f"{math.degrees(p):>9.2f}" for p in state.positions)
+                print(f"{elapsed:>6.1f}  {degrees}", flush=True)
+                next_print = elapsed + args.interval
 
         print("\nfinal state:")
         print(arm.read_state().describe())

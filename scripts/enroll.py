@@ -163,7 +163,9 @@ def main() -> None:
                     "message_kind": message_kind,
                 })
                 message = ""
-                time.sleep(0.04)
+                # Keep the frame rate up even while waiting on a keypress: an enabled
+                # motor with silent gaps latches error 0xD and needs clear_errors().
+                time.sleep(0.005)
 
     except KeyboardInterrupt:
         print("\n  interrupted")

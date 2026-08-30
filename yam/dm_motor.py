@@ -12,6 +12,10 @@ FEEDBACK_ID_OFFSET = 0x10
 ENABLE = [0xFF] * 7 + [0xFC]
 DISABLE = [0xFF] * 7 + [0xFD]
 SET_ZERO = [0xFF] * 7 + [0xFE]
+#: A DM motor latches its error word: disable/enable does NOT clear it. Confirmed
+#: on hardware -- a gripper stuck in 0xD survived two disable/enable cycles and
+#: cleared instantly on this. Without it the only recovery is a power cycle.
+CLEAR_ERROR = [0xFF] * 7 + [0xFB]
 
 KP_MAX = 500.0
 KD_MAX = 5.0
