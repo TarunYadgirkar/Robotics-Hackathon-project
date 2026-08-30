@@ -68,13 +68,30 @@ MAX_VEL_DEG_S = {name: _YAM_SPEED_DEG_S for name in ARM_JOINT_NAMES}
 MAX_VEL_DEG_S[GRIPPER_NAME] = 120.0  # percent/s; the sim branch's ceiling
 
 # -- hardware-mode constraints (operator's rule at the arm, enforced in code) --
-# The arm stays essentially still and the motion is the gripper. These are
-# checked against the prepared setpoint stream in hw_backend BEFORE anything is
+# Checked against the prepared setpoint stream in hw_backend BEFORE anything is
 # sent, so replaying a sim trajectory on hardware by mistake is refused rather
 # than swept through space.
-HW_MAX_EXCURSION_DEG = 5.0       # per arm joint, from the pose at motion start
+#
+# AUTHORIZATION, 2026-08-30, user present at the arm, verbatim: "you can move the
+# whole arm but do it slow and dont hit anything." This replaced the earlier
+# gripper-only rule (5 deg), which the user judged too subtle to read as motion
+# on stage. The envelope that replaces it is: bigger excursions on the axes that
+# cannot fold the arm into itself, still-tight limits on the two that can, and a
+# hard slow-speed ceiling well under the velocity cap.
+HW_MAX_EXCURSION_DEG = 30.0      # default per arm joint, from the pose at motion start
+#: joint2 is yam.arm's documented base-collision trap — it self-collides past
+#: ~105 deg from a folded home and moves the tip DOWN, not up — so it keeps a
+#: tight budget. joint3 is the joint that actually lifts and yam.arm records it
+#: as "self-collision-free across its whole range from home", which is why it
+#: gets a much larger one: the visible lift in these gestures is joint3's.
+HW_PER_JOINT_EXCURSION_DEG = {"joint2": 15.0, "joint3": 25.0}
+HW_SLOW_SPEED_DEG_S = 15.0       # "do it slow": under half the 34.4 deg/s cap
 HW_GRIPPER_GENTLE_PCT_S = 12.0   # far below the sim cap; the jaws move slowly
 HW_GAIN_SCALE = 0.5              # yam.arm gain_scale: softer than the SDK default
+
+
+def hw_excursion_limit(joint_name: str) -> float:
+    return HW_PER_JOINT_EXCURSION_DEG.get(joint_name, HW_MAX_EXCURSION_DEG)
 
 # Gripper calibration, from yam.arm (measured by Boris on this robot with these
 # jaws). The closed stop is a true hard stop and is the datum; the open stop is
@@ -129,6 +146,12 @@ def gripper_rad_to_percent(position: float) -> float:
 #: the bound carries this tolerance.
 REST_LIMIT_TOLERANCE_DEG = 0.05
 
+#: Interpolating a joint back to its starting value does not land exactly on it:
+#: 19.95 - 20.0 is -0.050000000000000710 in binary floating point, which read as
+#: a limit violation against a bound of exactly -0.05. A millionth of a degree is
+#: many orders of magnitude below anything the encoder or the arm can express.
+LIMIT_EPSILON_DEG = 1e-6
+
 
 def check_limits(positions, base=None) -> list[str]:
     """Human-readable soft-limit violations (empty == clean).
@@ -148,6 +171,7 @@ def check_limits(positions, base=None) -> list[str]:
         if base is not None:
             resting = base[i]
             allowance = max(allowance, lo - resting, resting - hi)
+        allowance += LIMIT_EPSILON_DEG
         if not (lo - allowance) <= value <= (hi + allowance):
             out.append(f"{name}={value:.2f} outside soft limit [{lo:.2f}, {hi:.2f}]")
     return out

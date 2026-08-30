@@ -106,6 +106,34 @@ def load_trajectory(path: str | Path) -> Trajectory:
     )
 
 
+def scale_amplitude(traj: Trajectory, factor: float) -> Trajectory:
+    """Shrink a relative gesture's offsets without changing its timing.
+
+    For bringing a new gesture up on an arm whose surroundings are unknown: run
+    it at 25% first, watch it, then run it full. Timing is deliberately NOT
+    scaled, so a reduced-amplitude pass is also slower in deg/s and strictly
+    safer than the full one. Relative frames only — scaling absolute joint
+    angles would mean something else entirely.
+    """
+    if not traj.is_relative:
+        raise TrajectoryError(
+            f"{traj.name}: amplitude scaling applies to relative gestures only; this one is "
+            f"{traj.frame}. Scaling absolute joint angles would move it toward the origin."
+        )
+    if not 0.0 < factor <= 1.0:
+        raise TrajectoryError(f"amplitude must be in (0, 1], got {factor}")
+    return Trajectory(
+        name=traj.name,
+        source=traj.source,
+        waypoints=tuple(
+            Waypoint(t=w.t, positions=tuple(v * factor for v in w.positions), label=w.label)
+            for w in traj.waypoints
+        ),
+        notes=traj.notes,
+        frame=traj.frame,
+    )
+
+
 def resolve_relative(traj: Trajectory, current: tuple[float, ...]) -> Trajectory:
     """Turn an offset trajectory into absolute poses around the arm's actual pose.
 

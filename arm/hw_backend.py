@@ -125,13 +125,33 @@ def validate_hardware_motion(setpoints, label: str) -> dict:
         for i, name in enumerate(model.ARM_JOINT_NAMES):
             worst_excursion[name] = max(worst_excursion[name], abs(positions[i] - start[i]))
 
-    offenders = {n: v for n, v in worst_excursion.items() if v > model.HW_MAX_EXCURSION_DEG}
+    offenders = {
+        n: v for n, v in worst_excursion.items() if v > model.hw_excursion_limit(n)
+    }
     if offenders:
-        detail = ", ".join(f"{n} moves {v:.1f} deg" for n, v in offenders.items())
+        detail = ", ".join(
+            f"{n} moves {v:.1f} deg (limit {model.hw_excursion_limit(n):.0f})"
+            for n, v in offenders.items()
+        )
         raise HardwareMotionRefused(
-            f"{label}: refused on hardware — {detail}, above the {model.HW_MAX_EXCURSION_DEG} deg "
-            "excursion rule for this arm. Hardware gestures live in arm/gestures/hardware/; this "
-            "looks like a sim trajectory."
+            f"{label}: refused on hardware — {detail}. Hardware gestures live in "
+            "arm/gestures/hardware/; this looks like a sim trajectory."
+        )
+
+    peak_arm_speed = 0.0
+    fastest_joint = ""
+    for (t0, q0), (t1, q1) in zip(setpoints, setpoints[1:]):
+        dt = t1 - t0
+        if dt <= 0:
+            continue
+        for i, name in enumerate(model.ARM_JOINT_NAMES):
+            speed = abs(q1[i] - q0[i]) / dt
+            if speed > peak_arm_speed:
+                peak_arm_speed, fastest_joint = speed, name
+    if peak_arm_speed > model.HW_SLOW_SPEED_DEG_S:
+        raise HardwareMotionRefused(
+            f"{label}: refused on hardware — {fastest_joint} would run at {peak_arm_speed:.1f} deg/s, "
+            f"above the {model.HW_SLOW_SPEED_DEG_S} deg/s slow-motion ceiling for this arm"
         )
 
     peak_gripper = 0.0
@@ -150,14 +170,84 @@ def validate_hardware_motion(setpoints, label: str) -> dict:
         if violations:
             raise HardwareMotionRefused(f"{label}: " + "; ".join(violations))
 
+    self_collision_note = verify_self_collision_free(setpoints, label)
+
     return {
+        "self_collision": self_collision_note,
         "worst_arm_excursion_deg": max(worst_excursion.values()),
+        "peak_arm_speed_deg_s": peak_arm_speed,
+        "per_joint_excursion_deg": worst_excursion,
         "peak_gripper_pct_s": peak_gripper,
         "gripper_range_pct": (
             min(p[-1] for _, p in setpoints),
             max(p[-1] for _, p in setpoints),
         ),
     }
+
+
+_SELF_CHECKER = None
+_SELF_CHECKER_TRIED = False
+#: Every Nth setpoint is collision-checked. At 100 Hz that is a check every
+#: 100ms of motion, and consecutive setpoints differ by far less than the
+#: checker's own margin, so nothing meaningful slips between samples.
+SELF_CHECK_STRIDE = 10
+
+
+def _self_collision_checker():
+    """MuJoCo self-collision checker over the official i2rt model, or None.
+
+    Built once per process. None means the model files are not present, which is
+    reported loudly rather than silently downgrading to "assumed safe".
+    """
+    global _SELF_CHECKER, _SELF_CHECKER_TRIED
+    if _SELF_CHECKER_TRIED:
+        return _SELF_CHECKER
+    _SELF_CHECKER_TRIED = True
+
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "hwresearch/i2rt/robot_models/arm/yam_pro/v1"
+    urdf, xml = root / "yam_pro.urdf", root / "yam_pro.xml"
+    if not (urdf.exists() and xml.exists()):
+        print(f"[HW] WARNING: {root} missing — self-collision checking is UNAVAILABLE for this "
+              "run; only the excursion and speed rules apply", file=sys.stderr)
+        return None
+    try:
+        from yam.collision import World
+        from yam.mujoco_collision import MujocoCollisionChecker
+
+        _SELF_CHECKER = MujocoCollisionChecker(
+            str(xml), World(obstacles=[], ground_z=None, margin=0.0), self_collision_margin=0.003
+        )
+    except Exception as exc:
+        print(f"[HW] WARNING: self-collision checker unavailable ({exc}); only the excursion and "
+              "speed rules apply", file=sys.stderr)
+        _SELF_CHECKER = None
+    return _SELF_CHECKER
+
+
+def verify_self_collision_free(setpoints, label: str) -> str:
+    """Refuse any motion that would fold the arm into itself.
+
+    Runs on the prepared setpoint stream, so it covers the interpolation and not
+    just the authored waypoints — the segments between poses are where a
+    self-collision actually happens.
+    """
+    checker = _self_collision_checker()
+    if checker is None:
+        return "self-collision NOT checked (model files absent)"
+
+    import math
+
+    sampled = list(setpoints[::SELF_CHECK_STRIDE]) + [setpoints[-1]]
+    for t, positions in sampled:
+        q = [math.radians(v) for v in positions[:6]]
+        if not checker.is_free(q):
+            raise HardwareMotionRefused(
+                f"{label}: refused — SELF-COLLISION at t={t:.2f}s. "
+                + "; ".join(checker.explain(q))
+            )
+    return f"self-collision-free at {len(sampled)} sampled poses (official i2rt model)"
 
 
 def read_passive(arm) -> list:
@@ -185,13 +275,20 @@ def preflight_checklist() -> list[str]:
         "CANable2 attached and FACTS.md amended (HARDWARE_PRESENT: yes) — verified",
         "python-can + gs_usb + pyusb installed in .venv — verified",
         "arm/model.py mirror matches yam.arm limits and SafetyLimits — verify_against_yam()",
-        "SELF-COLLISION IS UNVERIFIABLE HERE: yam.environment.ArmSafetyChecker needs mujoco and "
-        "the i2rt URDF, neither of which is on this machine. Mitigation is the hardware gesture "
-        f"table itself — every arm joint stays within {model.HW_MAX_EXCURSION_DEG} deg of the "
-        "pose the arm is already resting in, which cannot reach a new collision",
-        f"joint2 trap avoided by construction (hardware gestures move it <= "
-        f"{model.HW_MAX_EXCURSION_DEG} deg, against a ~{model.JOINT2_SELF_COLLISION_DEG} deg "
-        "self-collision with the base)",
+        "SELF-COLLISION IS VERIFIED, not assumed: MuJoCo against the exact convex meshes of the "
+        "official i2rt yam_pro model (github.com/i2rt-robotics/i2rt, fetched by Agent R1 into "
+        "hwresearch/), run automatically over every prepared setpoint stream before it is sent, "
+        "and over every gesture up front by arm/verify_poses.py",
+        "BASE CLAMPS are checked only RELATIVELY: yam.mapping.base_clamps() describes them by "
+        "hand, but the environment check uses link-sized spheres (up to 102mm) against a 30mm "
+        "margin and so calls the arm's own folded resting pose a collision. Gestures are verified "
+        "to come no CLOSER to the clamps than rest — a regression test, not proof of clearance",
+        f"joint2 kept to {model.HW_PER_JOINT_EXCURSION_DEG['joint2']:.0f} deg against its "
+        f"~{model.JOINT2_SELF_COLLISION_DEG:.0f} deg base-collision trap; joint3 allowed "
+        f"{model.HW_PER_JOINT_EXCURSION_DEG['joint3']:.0f} deg because yam.arm records it as "
+        "self-collision-free across its whole range from home",
+        "NOT modelled: everything else on the table. The human watching is the authority on the "
+        "rest of the workspace",
         "0xD comms-lost latch handled: recover_stale_motors() before enable, then a 100 Hz "
         "keep-alive stream for as long as the arm is enabled, including between demo beats",
         f"gripper is Boris's calibrated joint (max_torque 0.6 Nm ~ 41 N) and is commanded at "
@@ -401,9 +498,11 @@ class YamBackend:
         lo, hi = self.validation["gripper_range_pct"]
         print(f"[HW] {label}: {traj.duration:.2f}s, {len(setpoints)} setpoints @ {self.control_hz():.0f} Hz")
         print(f"[HW] hardware-rule check PASSED: arm moves at most "
-              f"{self.validation['worst_arm_excursion_deg']:.2f} deg (limit {model.HW_MAX_EXCURSION_DEG}), "
-              f"gripper {lo:.0f}->{hi:.0f}% at up to {self.validation['peak_gripper_pct_s']:.1f} %/s "
-              f"(limit {model.HW_GRIPPER_GENTLE_PCT_S})")
+              f"{self.validation['worst_arm_excursion_deg']:.1f} deg at up to "
+              f"{self.validation['peak_arm_speed_deg_s']:.1f} deg/s (limits "
+              f"{model.HW_MAX_EXCURSION_DEG:.0f}/{model.HW_SLOW_SPEED_DEG_S:.0f}), "
+              f"gripper {lo:.0f}->{hi:.0f}% at up to {self.validation['peak_gripper_pct_s']:.1f} %/s")
+        print(f"[HW] {self.validation['self_collision']}")
         for line in report:
             print(f"[HW] velocity cap applied: {line}")
         self._motion_started = time.perf_counter()

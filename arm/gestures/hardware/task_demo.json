@@ -1,16 +1,18 @@
 {
   "schema_version": 1,
   "name": "task_demo",
-  "source": "hardware-authored (relative, gripper-first)",
+  "source": "hardware-authored (relative, whole-arm)",
   "frame": "relative",
-  "notes": "HARDWARE task_demo — NOT a pick-and-place. Offsets from the resting pose: one slow close-hold-open cycle of the jaws with no joint motion at all. The simulator's task_demo is a full tabletop pick-and-place; on the real arm the operator's rule is that nothing sweeps through space, so the tier=act beat is the arm quietly working its gripper. Say that out loud: the act decision is real, the arm's hardware repertoire is one gripper cycle. Gripper rate 10 %/s closing and 6.7 %/s opening (limit 12), arm excursion 0 deg.",
+  "notes": "HARDWARE task_demo, whole-arm revision. Offsets from the resting pose. LOOKS LIKE: a real reach-and-place — the arm swings 20 deg off to one side while lifting and extending, lowers onto the spot, closes the jaws on it, lifts clear, then opens and returns. It is still not a calibrated pick-and-place of a known object at a known location: nothing here was taught from a demonstration and there is no perception in the loop, so it is a plausible motion through free space, not a grasp of anything in particular. Say that on stage — the tier=act decision is real, the arm's repertoire is this one trajectory. Peak 5.7 deg/s (ceiling 15), gripper 11.4 %/s (limit 12).",
   "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
   "units": "deg (joint1-joint6), percent_open (gripper)",
   "waypoints": [
     {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
-    {"t": 2.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -20.0], "label": "close gently"},
-    {"t": 3.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -20.0], "label": "hold the grip"},
-    {"t": 6.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "open, back to rest"},
-    {"t": 7.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "settle"}
+    {"t": 3.5, "positions": [-20.0, 12.0, 20.0, -20.0, 15.0, -12.0, 0.0], "label": "swing out and lift"},
+    {"t": 5.5, "positions": [-20.0, 12.0, 14.0, -14.0, 15.0, -12.0, 0.0], "label": "lower onto the spot"},
+    {"t": 7.7, "positions": [-20.0, 12.0, 14.0, -14.0, 15.0, -12.0, -25.0], "label": "close on it"},
+    {"t": 10.2, "positions": [-20.0, 12.0, 22.0, -18.0, 15.0, -12.0, -25.0], "label": "lift clear"},
+    {"t": 12.4, "positions": [-20.0, 12.0, 22.0, -18.0, 15.0, -12.0, 0.0], "label": "release"},
+    {"t": 16.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "back to resting pose"}
   ]
 }

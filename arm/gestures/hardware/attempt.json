@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "name": "attempt",
+  "source": "hardware-authored (relative, whole-arm)",
+  "frame": "relative",
+  "notes": "HARDWARE GESTURE, new for the 'told how, now try it' beat (Agent F's flow). Offsets from the resting pose. LOOKS LIKE: the arm commits to a try — it leans in and reaches down with joint4 pitched well over, closes the jaws, lifts a little as if testing whether it has the thing, then lets go and withdraws. The small lift is the point: it is the part that looks like checking, which is what makes the motion read as an attempt rather than a rehearsed success. It is honest about what it is — nothing was taught from a demonstration and there is no perception in the loop, so the arm is trying a shape of motion, not verifying a grasp. Peak 8.5 deg/s (ceiling 15), gripper 11.0 %/s (limit 12).",
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
+    {"t": 2.6, "positions": [-14.0, 10.0, 18.0, -22.0, 12.0, -10.0, 0.0], "label": "lean in and reach down"},
+    {"t": 4.6, "positions": [-14.0, 10.0, 18.0, -22.0, 12.0, -10.0, -22.0], "label": "close on it"},
+    {"t": 5.8, "positions": [-14.0, 10.0, 22.0, -22.0, 12.0, -10.0, -22.0], "label": "test lift — did I get it?"},
+    {"t": 8.0, "positions": [-14.0, 10.0, 18.0, -22.0, 12.0, -10.0, 0.0], "label": "let go"},
+    {"t": 10.6, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "withdraw to resting pose"}
+  ]
+}

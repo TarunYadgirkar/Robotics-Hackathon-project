@@ -14,7 +14,10 @@ from . import facts, model, motion, safety
 from .safety import ArmFrozen, MotionAborted  # re-exported for callers
 
 _GESTURE_ROOT = Path(__file__).resolve().parent / "gestures"
-GESTURE_NAMES = ("attention", "decline", "point_screen")
+#: "attempt" is the newest, for the beat where the robot is told how and tries
+#: it. Added to the frozen set rather than smuggled in as a replay path so
+#: callers keep using gesture(name) for everything expressive.
+GESTURE_NAMES = ("attention", "decline", "point_screen", "attempt")
 
 APPROACH_LEAD_S = 0.6  # nominal move-to-start time; the cap stretches it if needed
 POSE_TOLERANCE_DEG = 0.5
@@ -114,9 +117,11 @@ def _with_approach(traj: motion.Trajectory) -> motion.Trajectory:
     )
 
 
-def _execute(label: str, traj: motion.Trajectory, speed: float) -> tuple[float, ...]:
+def _execute(label: str, traj: motion.Trajectory, speed: float, amplitude: float = 1.0) -> tuple[float, ...]:
     connect()
     safety.require_not_frozen()
+    if amplitude != 1.0:
+        traj = motion.scale_amplitude(traj, amplitude)
     resolved = motion.resolve_relative(traj, _backend.current_positions())
     capped, setpoints, report = motion.prepare(_with_approach(resolved), speed, _backend.control_hz())
     _backend.begin_motion(label, capped, setpoints, report)
@@ -160,16 +165,21 @@ def home(speed: float = 1.0) -> tuple[float, ...]:
     return _execute("home", traj, speed)
 
 
-def replay(traj_json_path: str | Path, speed: float = 1.0) -> tuple[float, ...]:
-    """Replay a trajectory JSON. Soft limits and the velocity cap are enforced."""
+def replay(traj_json_path: str | Path, speed: float = 1.0, amplitude: float = 1.0) -> tuple[float, ...]:
+    """Replay a trajectory JSON. Soft limits and the velocity cap are enforced.
+
+    `amplitude` (relative gestures only) shrinks the offsets without changing
+    the timing — for bringing a gesture up on an arm whose surroundings are
+    unknown: 0.25 first, watch it, then 1.0.
+    """
     traj = motion.load_trajectory(traj_json_path)
-    return _execute(traj.name, traj, speed)
+    return _execute(traj.name, traj, speed, amplitude)
 
 
-def gesture(name: str, speed: float = 1.0) -> tuple[float, ...]:
+def gesture(name: str, speed: float = 1.0, amplitude: float = 1.0) -> tuple[float, ...]:
     if name not in GESTURE_NAMES:
         raise ValueError(f"unknown gesture {name!r}; expected one of {GESTURE_NAMES}")
-    return replay(GESTURE_DIR / f"{name}.json", speed=speed)
+    return replay(GESTURE_DIR / f"{name}.json", speed=speed, amplitude=amplitude)
 
 
 def recover_home() -> tuple[float, ...] | None:

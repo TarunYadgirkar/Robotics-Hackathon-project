@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "attempt",
+  "source": "sim-authored",
+  "notes": "SIM counterpart of the hardware 'attempt' gesture, so ARM_FORCE_SIM rehearsals of Agent F's 'told how, now try it' beat play the same beat. NOT taught on hardware. A reach down, a close, a small test lift, a release, and a withdraw — the test lift is what makes it read as an attempt rather than a rehearsed success.",
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {"t": 0.0, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "home"},
+    {"t": 2.6, "positions": [-11.0, 10.0, 18.0, -27.0, 16.0, 57.0, 20.0], "label": "lean in and reach down"},
+    {"t": 4.6, "positions": [-11.0, 10.0, 18.0, -27.0, 16.0, 57.0, 6.0], "label": "close on it"},
+    {"t": 5.8, "positions": [-11.0, 10.0, 22.0, -27.0, 16.0, 57.0, 6.0], "label": "test lift — did I get it?"},
+    {"t": 8.0, "positions": [-11.0, 10.0, 18.0, -27.0, 16.0, 57.0, 20.0], "label": "let go"},
+    {"t": 10.6, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "withdraw home"}
+  ]
+}

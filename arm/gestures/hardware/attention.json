@@ -1,15 +1,16 @@
 {
   "schema_version": 1,
   "name": "attention",
-  "source": "hardware-authored (relative, gripper-first)",
+  "source": "hardware-authored (relative, whole-arm)",
   "frame": "relative",
-  "notes": "HARDWARE GESTURE TABLE. Positions are OFFSETS from whatever pose the arm is resting in when the motion starts. The operator's rule is that the arm stays essentially still and the motion is the jaws, so this is one slow clamp-and-release with 3 deg of joint6 (wrist roll, lightest joint) for visibility. Deltas CLOSE the jaws because this arm rests with them ~99% open: measured 0.0105 rad = 99.1% on 2026-08-30. If the jaws are ever left nearly shut, this resolves below zero and is refused at resolve time — part them first rather than editing the limits. Gripper rate 10 %/s (gentle limit 12), arm excursion 3 deg (rule 5).",
+  "notes": "HARDWARE GESTURE TABLE, whole-arm revision. Positions are OFFSETS from whatever pose the arm is resting in. Authorized 2026-08-30 by the user at the arm ('you can move the whole arm but do it slow and dont hit anything') after the earlier gripper-only version read as the arm doing nothing. LOOKS LIKE: the arm turns its base toward the operator, lifts on joint3 with a small shoulder set on joint2, cocks the wrist over, and gives one clamp of the jaws before settling back. joint2 stays at 10 deg against its ~105 deg base-collision trap; joint3 does the lifting, which yam.arm records as self-collision-free from home. Peak 5.7 deg/s, well under the 15 deg/s slow ceiling; gripper 11.1 %/s under its 12 %/s limit.",
   "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
   "units": "deg (joint1-joint6), percent_open (gripper)",
   "waypoints": [
     {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
-    {"t": 2.5, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 3.0, -25.0], "label": "clamp, slight roll"},
-    {"t": 3.3, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 3.0, -25.0], "label": "hold"},
-    {"t": 5.8, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "release, back to rest"}
+    {"t": 3.5, "positions": [18.0, 10.0, 18.0, -12.0, -10.0, 12.0, 0.0], "label": "turn to operator, lift, cock wrist"},
+    {"t": 5.3, "positions": [18.0, 10.0, 18.0, -12.0, -10.0, 12.0, -20.0], "label": "clamp"},
+    {"t": 7.1, "positions": [18.0, 10.0, 20.0, -14.0, -10.0, 12.0, 0.0], "label": "release, settle higher"},
+    {"t": 10.6, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "back to resting pose"}
   ]
 }

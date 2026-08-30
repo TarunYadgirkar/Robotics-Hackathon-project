@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "name": "point_screen",
-  "source": "hardware-authored (relative, gripper-first)",
+  "source": "hardware-authored (relative, whole-arm)",
   "frame": "relative",
-  "notes": "HARDWARE GESTURE TABLE. Offsets from the resting pose. The arm does NOT turn toward the screen — that is a joint1 sweep and the hardware rule forbids it. It holds its pose and clamps once, held while the operator reads the numbers off the evidence screen, then releases. Say on stage that the pointing is the simulator's; on the real arm the gesture is the jaws. Gripper rate 10 %/s (limit 12), arm excursion 0 deg.",
+  "notes": "HARDWARE GESTURE TABLE, whole-arm revision. Offsets from the resting pose. LOOKS LIKE: the arm turns 25 deg toward the screen side, lifts and extends — joint3 up, joint4 pitched down so the forearm points rather than rears back — rolls the wrist to line up with the display, and holds there for 2 seconds while the numbers are read, then returns. This one genuinely points now; the gripper-only version did not. Peak 7.1 deg/s (ceiling 15).",
   "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
   "units": "deg (joint1-joint6), percent_open (gripper)",
   "waypoints": [
     {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
-    {"t": 3.5, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -35.0], "label": "clamp"},
-    {"t": 6.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -35.0], "label": "hold on the numbers"},
-    {"t": 9.5, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "release, back to rest"}
+    {"t": 3.5, "positions": [25.0, 8.0, 16.0, -18.0, -20.0, 22.0, 0.0], "label": "turn and point at the screen"},
+    {"t": 5.5, "positions": [25.0, 8.0, 16.0, -18.0, -20.0, 22.0, 0.0], "label": "hold on the numbers"},
+    {"t": 9.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "back to resting pose"}
   ]
 }

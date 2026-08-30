@@ -1,18 +1,17 @@
 {
   "schema_version": 1,
   "name": "decline",
-  "source": "hardware-authored (relative, gripper-first)",
+  "source": "hardware-authored (relative, whole-arm)",
   "frame": "relative",
-  "notes": "HARDWARE GESTURE TABLE. Offsets from the resting pose. Three gentle clamp pulses with a 2 deg joint6 shake — a refusal, not an alarm. Deltas close the jaws (this arm rests ~99% open). Gripper rate 10 %/s (limit 12), arm excursion 2 deg (rule 5).",
+  "notes": "HARDWARE GESTURE TABLE, whole-arm revision. Offsets from the resting pose. LOOKS LIKE: a slow, deliberate 'no' — the base yaws +/-15 deg through two full cycles while the wrist counter-rolls on joint5 and joint6, with the shoulder slightly set and the elbow lifted so the whole arm sways rather than just the base spinning. Peak 12.5 deg/s (ceiling 15). The counter-roll is what makes it read as a headshake instead of a turntable.",
   "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
   "units": "deg (joint1-joint6), percent_open (gripper)",
   "waypoints": [
     {"t": 0.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "resting pose"},
-    {"t": 1.5, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, -2.0, -15.0], "label": "pulse 1 clamp"},
-    {"t": 3.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0], "label": "pulse 1 release"},
-    {"t": 4.5, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, -2.0, -15.0], "label": "pulse 2 clamp"},
-    {"t": 6.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0], "label": "pulse 2 release"},
-    {"t": 7.5, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -15.0], "label": "pulse 3 clamp"},
-    {"t": 9.0, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "pulse 3 release, back to rest"}
+    {"t": 2.2, "positions": [-15.0, 6.0, 8.0, -8.0, 12.0, -15.0, 0.0], "label": "sway left"},
+    {"t": 4.6, "positions": [15.0, 6.0, 8.0, -8.0, -12.0, 15.0, 0.0], "label": "sway right"},
+    {"t": 7.0, "positions": [-15.0, 6.0, 8.0, -8.0, 12.0, -15.0, 0.0], "label": "sway left"},
+    {"t": 9.4, "positions": [15.0, 6.0, 8.0, -8.0, -12.0, 15.0, 0.0], "label": "sway right"},
+    {"t": 11.6, "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "label": "back to resting pose"}
   ]
 }
