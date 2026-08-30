@@ -35,6 +35,7 @@ def build_map(
     bounds_max: Sequence[float] = DEFAULT_BOUNDS_MAX,
     kinematics=None,
     scan_poses: Optional[Sequence[Sequence[float]]] = None,
+    self_filter_padding: float = 0.08,
 ) -> VoxelMap:
     voxel_map = VoxelMap.from_bounds(bounds_min, bounds_max, resolution)
 
@@ -59,7 +60,8 @@ def build_map(
         points = crop_to_workspace(np.asarray(scan_points, dtype=float))
         if kinematics is not None and scan_poses is not None and len(scan_poses):
             before = len(points)
-            points = filter_robot_from_scan(points, kinematics, scan_poses)
+            points = filter_robot_from_scan(points, kinematics, scan_poses,
+                                            padding=self_filter_padding)
             print(f"  self-filter: {before:,} -> {len(points):,} points "
                   f"({before - len(points):,} removed as robot across {len(scan_poses)} poses)")
         voxel_map.add_points(points)
@@ -71,7 +73,7 @@ def build_map(
     if kinematics is not None and scan_poses is not None:
         for pose in scan_poses:
             centers, radii = kinematics.collision_spheres(pose)
-            voxel_map.carve_spheres(centers, radii, padding=0.03)
+            voxel_map.carve_spheres(centers, radii, padding=self_filter_padding)
 
     voxel_map.compute_distance_field()
     return voxel_map

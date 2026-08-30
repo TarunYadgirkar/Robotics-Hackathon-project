@@ -40,6 +40,14 @@ def main() -> None:
     parser.add_argument("--sphere-radius", type=float, default=0.08)
     parser.add_argument("--min-base-distance", type=float, default=0.15,
                         help="ignore touched points nearer the base than this; they are the robot")
+    parser.add_argument("--self-filter", choices=("scan-pose", "all-poses"), default="scan-pose",
+                        help="scan-pose: subtract the arm only in the pose it held during the scan. "
+                             "all-poses subtracts the whole swept volume of the session, which "
+                             "carves the tabletop out from under the arm and leaves it floating.")
+    parser.add_argument("--self-filter-padding", type=float, default=0.08,
+                        help="how far beyond the arm's own surface to treat scan points as the "
+                             "arm. Must exceed the registration error, or the arm's own image "
+                             "in the scan becomes an obstacle it is standing inside.")
     parser.add_argument("--clamps", action="store_true",
                         help="add the two base clamps, which LiDAR is too coarse to resolve")
     parser.add_argument("--resolution", type=float, default=0.02)
@@ -90,11 +98,20 @@ def main() -> None:
     # can have the arm subtracted along its whole trajectory rather than at one
     # instant. Falls back to the touched poses for sessions recorded before
     # pose logging existed.
-    scan_poses = [sample.joint_angles for sample in session.pose_log] if session else []
-    if session and not scan_poses:
-        scan_poses = [p.joint_angles for obstacle in session.objects for p in obstacle.points]
-    if scan_poses:
-        print(f"  {len(scan_poses)} arm poses available for scan subtraction")
+    all_poses = [sample.joint_angles for sample in session.pose_log] if session else []
+    if session and not all_poses:
+        all_poses = [p.joint_angles for obstacle in session.objects for p in obstacle.points]
+
+    if args.self_filter == "scan-pose" and all_poses:
+        # The arm holds one pose for the sweep; subtracting every pose of the
+        # whole session removes the table it is standing on as well.
+        scan_poses = all_poses[:1]
+        print(f"  subtracting the arm in its scan-time pose only "
+              f"(of {len(all_poses)} logged)")
+    else:
+        scan_poses = all_poses
+        if scan_poses:
+            print(f"  subtracting the arm across all {len(scan_poses)} logged poses")
 
     table = table_slab(args.table_z, args.table_edge) if args.table_z is not None else None
 
@@ -102,6 +119,7 @@ def main() -> None:
         session=None if args.obstacle_mode in ("spheres", "planes", "none") else session,
         scan_points=points, table=table, resolution=args.resolution,
         kinematics=kinematics, scan_poses=scan_poses, scan_is_registered=registered,
+        self_filter_padding=args.self_filter_padding,
     )
 
     if args.obstacle_mode == "planes" and session is not None:
