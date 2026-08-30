@@ -1,0 +1,12 @@
+{
+  "bottle flip": {
+    "n_live_demos": 3,
+    "n_live_demonstrators": 1,
+    "takes": [
+      {"file": "take_1.parquet", "n_frames": 20, "detection_rate": 0.7, "mean_speed": 812.0, "grip_aperture_range": [0.02, 0.09]},
+      {"file": "take_2.parquet", "n_frames": 18, "detection_rate": 0.65, "mean_speed": 790.0, "grip_aperture_range": [0.03, 0.10]},
+      {"file": "take_3.parquet", "n_frames": 22, "detection_rate": 0.72, "mean_speed": 830.0, "grip_aperture_range": [0.02, 0.08]}
+    ],
+    "live_stat_line": "peak hand speed 830 px/s, 72% of frames tracked"
+  }
+}

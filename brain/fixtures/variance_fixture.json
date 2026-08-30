@@ -1,0 +1,47 @@
+{
+  "garment-iron-press": {
+    "n_clips": 8,
+    "n_families": 6,
+    "n_cameras": 5,
+    "detection_rate": 0.92,
+    "silhouette_k2": 0.42,
+    "perm_p": 0.01,
+    "labels": [0, 0, 0, 1, 1, 1, 1, 0],
+    "families": ["f1", "f2", "f3", "f4", "f5", "f6", "f1", "f2"],
+    "cameras": ["c1", "c2", "c3", "c4", "c5", "c1", "c2", "c3"],
+    "family_confounded": false,
+    "camera_confounded": false,
+    "excluded": false,
+    "exclude_reason": null
+  },
+  "axle-shaft-cutting": {
+    "n_clips": 6,
+    "n_families": 1,
+    "n_cameras": 1,
+    "detection_rate": 0.88,
+    "silhouette_k2": 0.55,
+    "perm_p": 0.02,
+    "labels": [0, 0, 0, 1, 1, 1],
+    "families": ["f1", "f1", "f1", "f1", "f1", "f1"],
+    "cameras": ["c1", "c1", "c1", "c1", "c1", "c1"],
+    "family_confounded": true,
+    "camera_confounded": true,
+    "excluded": false,
+    "exclude_reason": null
+  },
+  "drilling": {
+    "n_clips": 4,
+    "n_families": 2,
+    "n_cameras": 2,
+    "detection_rate": 0.31,
+    "silhouette_k2": null,
+    "perm_p": null,
+    "labels": [],
+    "families": [],
+    "cameras": [],
+    "family_confounded": null,
+    "camera_confounded": null,
+    "excluded": true,
+    "exclude_reason": "detection_rate < 0.5"
+  }
+}

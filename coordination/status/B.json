@@ -1,0 +1,20 @@
+{
+  "agent": "B",
+  "state": "done",
+  "outputs": [
+    "brain/decide.py",
+    "brain/coverage.py",
+    "brain/metadata.py",
+    "brain/variance_io.py",
+    "brain/test_decide.py",
+    "brain/fixtures/variance_fixture.json",
+    "brain/fixtures/live_index_fixture.json"
+  ],
+  "smoke_test": {
+    "cmd": ".venv/bin/python brain/test_decide.py",
+    "exit_code": 0,
+    "output_tail": "ALL PASS"
+  },
+  "notes": "Fixed the token_set_ratio bug per PLAN_v2's open blocker with content-word coverage (brain/coverage.py): tokenize query, drop stopwords, per-task word-level fuzzy match (stdlib difflib.SequenceMatcher, threshold 0.85) against that task's display_name + canonical_task_id + aliases tokens, coverage = fraction of query content words matched, abstain threshold 0.8. No rapidfuzz/thefuzz install needed -- stdlib difflib is sufficient and this is word-level, not the broken whole-string token_set_ratio approach. Verified emergent (not special-cased): 'flip' scores <0.85 against every one of the 50 real tasks' vocab words (test_flip_never_matches_emergently), and a source-scan test asserts no canonical_task_id string literals appear in decide.py/coverage.py. brain/test_decide.py covers: bottle flip abstains ('flip' uncovered); all 3 bottle tasks (bottle-cleaning, bottle-surface-buffing, water-filtration-bottle-filling) match themselves and do not abstain (the regression guard for the bug); one near-miss spelling ('buttonhole stiching' typo -> buttonhole-stitching, difflib ratio 0.941); gibberish abstains. variance/results/variance.json from Agent A was NOT YET PRESENT when this was built (polled coordination/status/A.json, state=running throughout, then a bounded 3-minute additional wait) -- built and unit-tested the abstain tier first from metadata alone, then implemented the act/ask tier logic (family_confounded/camera_confounded gating, perm_p<=0.05 threshold, cluster sizes from labels) against a hand-written fixture at brain/fixtures/variance_fixture.json covering an ask-eligible clean task, a confound-blocked task, and an excluded task. LIVE INTEGRATION WITH THE REAL variance.json IS UNTESTED -- decide.py reads variance/results/variance.json at the frozen path and the code path is schema-compliant and fixture-verified, but has not been exercised against Agent A's actual output. When variance.json is absent OR the matched task is missing/excluded from it, decide.py defaults matched tasks to tier=act (evidence.variance_available=false) rather than abstaining or fabricating a variance claim -- this keeps the 3-bottle-task regression guard true independent of Agent A's completion. --include-live reads feedback/live_index.json defensively (tested via fixture; real file from Agent E not yet present, confirmed CLI does not crash on its absence). Recommend F re-run brain/test_decide.py once variance/results/variance.json exists as a live sanity check before demo rehearsal.",
+  "ts": "2026-08-30T12:41:00-07:00"
+}
