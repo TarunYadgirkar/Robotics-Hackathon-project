@@ -94,8 +94,10 @@ export default function Headline({ corpus, stats, order }: Props) {
 
         <div className="mt-4 flex flex-wrap items-center gap-4 rounded border border-line bg-panel px-4 py-3">
           <div>
-            <div className="num text-xl text-accent">ρ ≥ {stab.worst.toFixed(2)}</div>
-            <div className="text-[11px] text-dim">ordering stability</div>
+            <div className="num text-xl text-accent">ρ ≥ {stab.bandFloor.toFixed(2)}</div>
+            <div className="text-[11px] text-dim">
+              over {stab.band[0].toFixed(2)}–{stab.band[1].toFixed(2)}
+            </div>
           </div>
           <svg viewBox="0 0 220 44" className="h-11 w-56" role="img" aria-label="rank correlation against threshold">
             <line x1={0} y1={40} x2={220} y2={40} stroke="#2a2f38" />
@@ -107,11 +109,13 @@ export default function Headline({ corpus, stats, order }: Props) {
             />
           </svg>
           <p className="max-w-md text-[11px] leading-relaxed text-dim">
-            Sweeping the motion threshold across its whole range — {stab.thresholds[0]} to{' '}
-            {stab.thresholds[stab.thresholds.length - 1]} — the rank ordering of tasks never
-            falls below Spearman ρ = {stab.worst.toFixed(2)} against the default. The
-            percentages move; who is at the top does not. That is the part we are willing to
-            defend.
+            Across the threshold band {stab.band[0].toFixed(2)}–{stab.band[1].toFixed(2)} the
+            rank ordering of tasks holds at Spearman ρ ≥ {stab.bandFloor.toFixed(2)} against the
+            default: absolute percentages move a lot, who is near the top barely does. Below
+            that band it does break down — ρ falls to {stab.worst.toFixed(2)} at{' '}
+            {stab.thresholds[0].toFixed(2)}, where almost every second gets called transit and
+            the labelling is degenerate rather than merely stricter. The ordering is what we
+            defend, and only inside that band.
           </p>
         </div>
 

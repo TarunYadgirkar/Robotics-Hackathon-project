@@ -181,7 +181,10 @@ export function spearman(a: number[], b: number[]): number {
   return da && db ? num / Math.sqrt(da * db) : 1
 }
 
-export interface Stability { thresholds: number[]; rhos: number[]; worst: number }
+export interface Stability {
+  thresholds: number[]; rhos: number[]; worst: number
+  band: [number, number]; bandFloor: number
+}
 
 /** How much the task ordering depends on where the threshold is put. */
 export function stability(c: Corpus, reference: number): Stability {
@@ -194,5 +197,14 @@ export function stability(c: Corpus, reference: number): Stability {
   const thresholds: number[] = []
   for (let v = 0.15; v <= 1.001; v += 0.05) thresholds.push(+v.toFixed(2))
   const rhos = thresholds.map((v) => spearman(ref, shares(v)))
-  return { thresholds, rhos, worst: Math.min(...rhos) }
+  // The contiguous span around the default where the ordering genuinely holds.
+  const bandFloor = 0.9
+  const centre = thresholds.findIndex((v) => v >= reference)
+  let lo = centre, hi = centre
+  while (lo > 0 && rhos[lo - 1] >= bandFloor) lo--
+  while (hi < thresholds.length - 1 && rhos[hi + 1] >= bandFloor) hi++
+  return {
+    thresholds, rhos, worst: Math.min(...rhos),
+    band: [thresholds[lo], thresholds[hi]], bandFloor,
+  }
 }
