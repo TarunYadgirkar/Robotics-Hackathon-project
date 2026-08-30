@@ -129,7 +129,13 @@ class SafetyLimits:
 
     torque_scale: float = 1.0
     gain_scale: float = 1.0
-    max_step_per_tick: float = 0.02  # rad; at 100 Hz this is ~2 rad/s
+    #: rad/s. Previously a per-tick cap, which made the real speed limit a
+    #: function of however fast the loop happened to run: the same 0.02 rad/tick
+    #: is 114 deg/s at 100Hz and 22 deg/s at 19Hz. Every commanded speed above
+    #: that ceiling was silently clipped to the same motion.
+    max_joint_speed: float = 2.0
+    #: Ceiling on the step allowed after a stall, so a late tick cannot authorise a lunge.
+    max_step_per_tick: float = 0.05
     max_temperature: float = 70.0
 
 
@@ -168,6 +174,7 @@ class YamArm:
         #: needed a second attempt, and how often it gave up entirely.
         self.resyncs = 0
         self.failures = 0
+        self._last_command_time: Optional[float] = None
 
     # -- transport ---------------------------------------------------------
 
@@ -220,8 +227,17 @@ class YamArm:
             f"expected 0x{expected_id:03X}, saw {seen}"
         )
 
-    def _drain(self) -> None:
-        while self.bus.recv(timeout=0.005) is not None:
+    def _drain(self, timeout: float = 0.0) -> None:
+        """Discard queued frames.
+
+        Non-blocking by default. `recv` waits the full timeout on an already
+        empty queue, and this runs before every attempt of every joint, so a
+        5ms timeout cost 35.7ms per six-joint tick -- the entire budget at 100Hz,
+        dragging the achieved rate to ~19Hz. A pre-send drain only has to throw
+        away what is already queued; it never needs to wait for a frame that has
+        not arrived. Callers that genuinely want the bus to settle pass a timeout.
+        """
+        while self.bus.recv(timeout=timeout) is not None:
             pass
 
     # -- lifecycle ---------------------------------------------------------
@@ -267,7 +283,7 @@ class YamArm:
                     break
                 if fb.error_code == COMMUNICATION_LOST:
                     self._clear_joint(joint)
-                self._drain()
+                self._drain(timeout=0.002)
                 time.sleep(0.01)
                 fb = self._exchange(joint, ENABLE)
             feedback.append(fb)
@@ -357,10 +373,18 @@ class YamArm:
             raise ValueError(f"expected {len(self.joints)} targets, got {len(targets)}")
 
         scale = self.safety.gain_scale if gain_scale is None else gain_scale
+
+        now = time.time()
+        elapsed = now - self._last_command_time if self._last_command_time else 0.01
+        self._last_command_time = now
+        # Cap the per-tick step by speed x elapsed time, but never let a long
+        # stall authorise a large jump.
+        step_limit = min(self.safety.max_joint_speed * elapsed, self.safety.max_step_per_tick)
+
         feedback = []
         for joint, target in zip(self.joints, targets):
             previous = self._last_command[joint.motor_id]
-            step = min(max(target - previous, -self.safety.max_step_per_tick), self.safety.max_step_per_tick)
+            step = min(max(target - previous, -step_limit), step_limit)
             commanded = joint.clamp_position(previous + step)
 
             frame = encode_mit_command(
