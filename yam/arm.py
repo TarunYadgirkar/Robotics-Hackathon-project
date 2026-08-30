@@ -17,6 +17,8 @@ import can
 from yam import can_compat  # noqa: F401  (patches gs_usb for macOS)
 from yam.dm_motor import (
     CLEAR_ERROR,
+    COMMUNICATION_LOST,
+    NORMAL_ERROR_CODE,
     DISABLE,
     ENABLE,
     FEEDBACK_ID_OFFSET,
@@ -158,7 +160,8 @@ class YamArm:
         self.joints = list(joints) if joints is not None else list(ARM_JOINTS)
         self.safety = safety or SafetyLimits()
         self.response_timeout = response_timeout
-        self.bus = can.interface.Bus(interface="gs_usb", channel=channel, bitrate=CAN_BITRATE)
+        self.channel = channel
+        self.bus = can_compat.open_bus(channel=channel, bitrate=CAN_BITRATE)
         self._enabled_ids: List[int] = []
         self._last_command: Dict[int, float] = {}
 
@@ -191,15 +194,61 @@ class YamArm:
 
     # -- lifecycle ---------------------------------------------------------
 
+    def recover_stale_motors(self) -> List[str]:
+        """Clear the benign comms-timeout latch, and only that one.
+
+        0xD means a motor sat enabled without a command stream -- a timeout, not
+        damage, and it clears on request. Every other code (over-temperature,
+        overcurrent, overload) reports a physical condition, so those are left
+        latched rather than cleared out from under the operator.
+        """
+        stale = []
+        for joint in self.joints:
+            try:
+                feedback = self._exchange(joint, encode_mit_command(joint.spec, position=0.0), retries=2)
+            except MotorCommunicationError:
+                continue
+            if feedback.error_code == COMMUNICATION_LOST:
+                stale.append(joint.name)
+
+        if stale:
+            self.clear_errors()
+        return stale
+
     def enable(self) -> ArmState:
+        """Enable every motor, clearing a comms-timeout latch per motor as it appears.
+
+        Clearing all the motors up front does not hold: enabling is sequential,
+        and a motor cleared at the start of the sweep can time out again while
+        the motors ahead of it are still being enabled. So each motor is cleared
+        and retried at the moment it reports the latch.
+        """
         self._drain()
         feedback = []
         for joint in self.joints:
             fb = self._exchange(joint, ENABLE)
+            # Retry while the motor reports anything but "enabled". A latched
+            # 0xD needs clearing first; a 0x0 usually means we read a frame the
+            # motor queued before the enable landed, so draining is enough.
+            for _ in range(4):
+                if fb.error_code == NORMAL_ERROR_CODE:
+                    break
+                if fb.error_code == COMMUNICATION_LOST:
+                    self._clear_joint(joint)
+                self._drain()
+                time.sleep(0.01)
+                fb = self._exchange(joint, ENABLE)
             feedback.append(fb)
             self._enabled_ids.append(joint.motor_id)
             self._last_command[joint.motor_id] = fb.position
         return self._to_state(feedback)
+
+    def _clear_joint(self, joint: JointConfig) -> None:
+        for _ in range(3):
+            self.bus.send(can.Message(
+                arbitration_id=joint.motor_id, data=bytearray(CLEAR_ERROR), is_extended_id=False
+            ))
+            time.sleep(0.002)
 
     def clear_errors(self) -> None:
         """Clear latched motor error words.
@@ -209,18 +258,29 @@ class YamArm:
         enable() -- clearing the error does not re-enable the motor.
         """
         for joint in self.joints:
-            for _ in range(3):
-                self.bus.send(can.Message(
-                    arbitration_id=joint.motor_id, data=bytearray(CLEAR_ERROR), is_extended_id=False
-                ))
-                time.sleep(0.002)
+            self._clear_joint(joint)
         self._drain()
+
+    def reconnect(self) -> None:
+        """Reopen the CAN bus after the adapter drops off USB mid-session.
+
+        The CANable can vanish and re-enumerate under load, which surfaces as
+        USBError 19 on the next send. Everything above this class then sees a
+        dead arm, so the bus object is rebuilt in place rather than making every
+        caller hold a replaceable reference.
+        """
+        try:
+            self.bus.shutdown()
+        except Exception:
+            pass
+        self.bus = can_compat.open_bus(channel=self.channel, bitrate=CAN_BITRATE)
+        self._enabled_ids.clear()
 
     def disable(self) -> None:
         for joint in self.joints:
             try:
                 self._exchange(joint, DISABLE, retries=2)
-            except MotorCommunicationError:
+            except (MotorCommunicationError, can.CanError, OSError):
                 # Best effort: a motor that has already dropped off cannot be told to stop,
                 # and raising here would skip disabling the motors after it.
                 pass

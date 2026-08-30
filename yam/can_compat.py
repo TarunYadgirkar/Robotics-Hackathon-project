@@ -36,7 +36,11 @@ def apply() -> bool:
     default_flags = GsUsb.start.__defaults__[0]
 
     def start(self, flags: int = default_flags) -> None:
-        self.gs_usb.reset()
+        # No usb.reset() here, unlike the stock implementation. On macOS the
+        # reset re-enumerates the adapter and invalidates the handle we are
+        # holding, so the first open works and every reopen in the same session
+        # fails with "No such device" -- which matters because reopening is
+        # exactly what recovery from a mid-session dropout needs to do.
         flags &= self.device_capability.feature & _DRIVER_SUPPORTED_MODES
         self.device_flags = flags
         self.gs_usb.ctrl_transfer(0x41, _GS_USB_BREQ_MODE, 0, 0, DeviceMode(GS_CAN_MODE_START, flags).pack())
@@ -57,6 +61,41 @@ def reset_adapter() -> None:
             device.gs_usb.reset()
         except usb.core.USBError:
             pass
+
+
+def open_bus(channel: int = 0, bitrate: int = 1_000_000, attempts: int = 6):
+    """Open the CAN bus, retrying while the adapter settles.
+
+    A previous process that has just exited can leave the device claimed for a
+    moment, and libusb reports that as "No such device" rather than "busy" --
+    a misleading error that reads like the adapter was unplugged.
+    """
+    import time
+
+    import can
+
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            return can.interface.Bus(interface="gs_usb", channel=channel, bitrate=bitrate)
+        except (usb.core.USBError, OSError) as error:
+            last_error = error
+            # Deliberately no reset between attempts. usb.reset() re-enumerates
+            # the adapter and invalidates the handle that the next attempt has
+            # just been given, so resetting on every failure turns a transient
+            # "still releasing" into a persistent "No such device". Waiting is
+            # what actually works; a reset is a last resort.
+            time.sleep(0.3 * (attempt + 1))
+
+    reset_adapter()
+    time.sleep(1.0)
+    try:
+        return can.interface.Bus(interface="gs_usb", channel=channel, bitrate=bitrate)
+    except (usb.core.USBError, OSError) as error:
+        raise RuntimeError(
+            f"could not open the CAN adapter after {attempts + 1} attempts: {error}. "
+            "If this persists, unplug and replug the CANable."
+        ) from error
 
 
 def find_adapter() -> GsUsb:
