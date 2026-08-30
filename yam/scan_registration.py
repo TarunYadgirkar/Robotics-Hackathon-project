@@ -52,12 +52,15 @@ class ScanRegistration:
 
     @property
     def is_trustworthy(self) -> bool:
-        """A good fit needs both closeness and coverage.
+        """A good fit needs closeness AND coverage, and the bar for closeness is low.
 
-        A low RMSE over a handful of points is what a wrong pose looks like when
-        a few model points happen to land on a wall.
+        Measured on the real scan with the arm planted at a known pose: the true
+        pose gives 3.2mm RMSE at 100% inlier coverage, while wrong yaws at the
+        same position give 21-22mm and wrong translations 53-79mm. So the
+        threshold belongs near 10mm, not the 20mm used here originally -- at
+        20mm a pose rotated by 3 radians still passes.
         """
-        return self.rmse < 0.02 and self.inlier_fraction > 0.5
+        return self.rmse < 0.010 and self.inlier_fraction > 0.9
 
     def apply(self, points: np.ndarray) -> np.ndarray:
         return np.asarray(points, dtype=float).reshape(-1, 3) @ self.rotation.T + self.translation
@@ -260,6 +263,130 @@ def register_arm_to_scan(
         rotation=scan_to_robot_rotation,
         translation=scan_to_robot_translation,
         rmse=float(np.sqrt((distances[inliers] ** 2).mean())),
+        inliers=int(inliers.sum()),
+        model_points=len(model),
+        searched=searched,
+    )
+
+
+def refine_from_seed(
+    scan_points: np.ndarray,
+    arm_points: np.ndarray,
+    seed_point: Sequence[float],
+    yaw_steps: int = 180,
+    search_radius: float = 0.35,
+    translation_step: float = 0.05,
+    cutoff: float = 0.12,
+    iterations: int = 40,
+    free_space_weight: float = 0.8,
+) -> Optional[ScanRegistration]:
+    """Align the arm to the scan given a rough idea of where the arm is.
+
+    A global search over a whole room is where this problem is hard: the arm is a
+    small object in a large cloud, and point-to-cloud distance alone is happy to
+    park it against any dense surface. One coarse indication of where the arm is
+    -- a tap in the AR view, accurate to a hand's width -- removes that entirely.
+    Yaw is still unknown, so it is swept exhaustively, but translation only has
+    to be searched within `search_radius` of the seed.
+
+    Precision does not come from the seed. It comes from the ICP that follows,
+    which fits thousands of known surface points, so a coarse tap yields a fit as
+    good as the geometry allows.
+
+    `seed_point` is in the scan's own (ARKit) frame -- what a raycast returns.
+    """
+    from scipy import ndimage
+
+    scan = np.asarray(scan_points, dtype=float).reshape(-1, 3)
+    model = np.asarray(arm_points, dtype=float).reshape(-1, 3)
+    if len(scan) < 100 or len(model) < 20:
+        return None
+
+    upright = scan @ ARKIT_TO_ZUP.T
+    seed = np.asarray(seed_point, dtype=float) @ ARKIT_TO_ZUP.T
+
+    resolution = 0.02
+    low = upright.min(axis=0) - 0.4
+    high = upright.max(axis=0) + 0.4
+    shape = np.maximum(np.ceil((high - low) / resolution).astype(int), 1)
+    occupancy = np.zeros(shape, dtype=bool)
+    indices = np.floor((upright - low) / resolution).astype(int)
+    indices = indices[np.all((indices >= 0) & (indices < shape), axis=1)]
+    occupancy[indices[:, 0], indices[:, 1], indices[:, 2]] = True
+    field = ndimage.distance_transform_edt(~occupancy, sampling=resolution)
+
+    def distances(points: np.ndarray) -> np.ndarray:
+        cell = np.floor((points - low) / resolution).astype(int)
+        inside = np.all((cell >= 0) & (cell < shape), axis=-1)
+        out = np.full(points.shape[:-1], 5.0)
+        valid = cell[inside]
+        out[inside] = field[valid[..., 0], valid[..., 1], valid[..., 2]]
+        return out
+
+    # A shell around the arm that must be empty. Without it, "the model lies on
+    # a surface" is satisfied just as well by a wall as by the arm.
+    rng = np.random.default_rng(0)
+    directions = rng.normal(size=(len(model) * 2, 3))
+    directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+    shell = np.repeat(model, 2, axis=0) + directions * rng.uniform(0.09, 0.16, (len(model) * 2, 1))
+    shell = shell[cKDTree(model).query(shell, k=1)[0] > 0.07]
+    if len(shell) > 600:
+        shell = shell[rng.choice(len(shell), 600, replace=False)]
+
+    coarse = model if len(model) <= 600 else model[np.linspace(0, len(model) - 1, 600).astype(int)]
+    offsets = np.arange(-search_radius, search_radius + 1e-9, translation_step)
+    grid = np.array([[dx, dy, dz] for dx in offsets for dy in offsets for dz in offsets])
+    candidates = seed + grid
+
+    best = None
+    searched = 0
+    for yaw in np.linspace(0, 2 * np.pi, yaw_steps, endpoint=False):
+        rotation = yaw_matrix(yaw)
+        placed = coarse @ rotation.T
+        empty = shell @ rotation.T
+
+        on_surface = np.minimum(distances(placed[None] + candidates[:, None, :]), 0.10).mean(axis=1)
+        free = np.minimum(distances(empty[None] + candidates[:, None, :]), 0.10).mean(axis=1)
+        score = on_surface - free_space_weight * free
+        searched += len(candidates)
+
+        index = int(np.argmin(score))
+        if best is None or score[index] < best[0]:
+            best = (float(score[index]), yaw, candidates[index].copy())
+
+    if best is None:
+        return None
+
+    tree = cKDTree(upright)
+    rotation = yaw_matrix(best[1])
+    translation = best[2]
+
+    for _ in range(iterations):
+        placed = model @ rotation.T + translation
+        gaps, neighbours = tree.query(placed, k=1)
+        inliers = gaps < cutoff
+        if inliers.sum() < 20:
+            break
+        source = model[inliers]
+        target = upright[neighbours[inliers]]
+        source_centre = source.mean(axis=0)
+        target_centre = target.mean(axis=0)
+        u, _, vt = np.linalg.svd((source - source_centre).T @ (target - target_centre))
+        correction = np.eye(3)
+        correction[2, 2] = np.sign(np.linalg.det(vt.T @ u.T))
+        rotation = vt.T @ correction @ u.T
+        translation = target_centre - rotation @ source_centre
+
+    placed = model @ rotation.T + translation
+    gaps, _ = tree.query(placed, k=1)
+    inliers = gaps < cutoff
+    if inliers.sum() < 20:
+        return None
+
+    return ScanRegistration(
+        rotation=rotation.T @ ARKIT_TO_ZUP,
+        translation=-rotation.T @ translation,
+        rmse=float(np.sqrt((gaps[inliers] ** 2).mean())),
         inliers=int(inliers.sum()),
         model_points=len(model),
         searched=searched,

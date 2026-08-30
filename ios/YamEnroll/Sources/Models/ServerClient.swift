@@ -164,6 +164,19 @@ final class ServerClient: ObservableObject {
         return (try? JSONDecoder().decode(EraseResult.self, from: data).removed) ?? 0
     }
 
+    /// Align the scan by pointing at the arm; ICP does the precision.
+    func alignFromSeed(seed: SIMD3<Float>, pose: [Double]) async throws -> Registration {
+        guard var request = request("/api/align_seed", method: "POST") else { throw ClientError.notConfigured }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "seed": [Double(seed.x), Double(seed.y), Double(seed.z)],
+            "pose": pose,
+        ])
+        let (data, response) = try await session.data(for: request)
+        try Self.check(response, data: data)
+        return try JSONDecoder().decode(Registration.self, from: data)
+    }
+
     func register(scanPoints: [[Double]], robotPoints: [[Double]]) async throws -> Registration {
         guard var request = request("/api/register", method: "POST") else { throw ClientError.notConfigured }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -261,5 +274,12 @@ struct Registration: Decodable {
     var pairs: Int?
     var trustworthy: Bool?
     var error: String?
-    enum CodingKeys: String, CodingKey { case pairs, trustworthy, error, rmseMm = "rmse_mm" }
+    var inliers: Int?
+    var modelPoints: Int?
+    var method: String?
+    enum CodingKeys: String, CodingKey {
+        case pairs, trustworthy, error, inliers, method
+        case rmseMm = "rmse_mm"
+        case modelPoints = "model_points"
+    }
 }

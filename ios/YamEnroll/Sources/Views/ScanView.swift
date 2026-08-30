@@ -18,6 +18,8 @@ struct ScanView: View {
     @State private var uploading = false
     @State private var uploadedPoints: Int?
     @State private var erasing = false
+    @State private var aligning = false
+    @State private var busy = false
 
     private var references: [[Double]] { client.state?.references ?? [] }
 
@@ -58,6 +60,12 @@ struct ScanView: View {
                 Text(note).font(.system(size: 12, weight: .medium)).foregroundStyle(.white)
             } else if !scanner.isSupported {
                 Text("No LiDAR on this device").font(.system(size: 12)).foregroundStyle(.white)
+            } else if busy {
+                Text("Fitting the arm to the scan…")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(.white)
+            } else if aligning {
+                Text("Tap the arm — within a hand's width is close enough")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.red)
             } else if erasing {
                 Text("Erase mode — tap to delete a 25cm ball of scan")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.red)
@@ -107,7 +115,19 @@ struct ScanView: View {
 
             Button {
                 Haptics.tap()
+                aligning.toggle()
+                if aligning { erasing = false }
+                show(aligning ? "tap the ARM itself — roughly is fine" : "align cancelled")
+            } label: {
+                label(aligning ? "Aiming" : "Align", "target")
+                    .overlay(RoundedRectangle(cornerRadius: 14)
+                        .stroke(aligning ? Theme.red : .clear, lineWidth: 2))
+            }
+
+            Button {
+                Haptics.tap()
                 erasing.toggle()
+                if erasing { aligning = false }
                 show(erasing
                      ? "tap anything that should not be in the map"
                      : "back to pairing points")
@@ -130,6 +150,35 @@ struct ScanView: View {
     }
 
     private func handleTap(_ worldPoint: SIMD3<Float>) {
+        if aligning {
+            guard uploadedPoints != nil else {
+                show("send the scan first", warning: true); return
+            }
+            guard let pose = client.state?.joints, pose.count >= 6 else {
+                show("no arm pose from the laptop", warning: true); return
+            }
+            busy = true
+            Task {
+                defer { busy = false }
+                do {
+                    let result = try await client.alignFromSeed(seed: worldPoint, pose: Array(pose.prefix(6)))
+                    if let error = result.error { show(error, warning: true); return }
+                    let rmse = result.rmseMm ?? 0
+                    let coverage = result.inliers.map { "\($0)/\(result.modelPoints ?? 0)" } ?? "?"
+                    if result.trustworthy == true {
+                        Haptics.success()
+                        show(String(format: "aligned: %.1f mm over %@ points", rmse, coverage))
+                        aligning = false
+                    } else {
+                        show(String(format: "poor fit: %.0f mm over %@ — tap closer to the arm", rmse, coverage),
+                             warning: true)
+                    }
+                } catch {
+                    show("align failed: \(error.localizedDescription)", warning: true)
+                }
+            }
+            return
+        }
         if erasing {
             Task {
                 do {

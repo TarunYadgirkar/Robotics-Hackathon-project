@@ -83,6 +83,7 @@ def main() -> None:
 
     server = VizServer(port=args.port, host=args.host)
     server.static_payloads["meshes"] = export_arm_meshes(kinematics)
+    server.kinematics = kinematics
 
     # Adopt the most recent scan on disk. A scan survives a server restart as a
     # file, but used to live only in the previous process's memory, so the phone
