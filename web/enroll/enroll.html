@@ -117,11 +117,13 @@
     <span>tip <b id="statTip">—</b></span>
     <span>poses logged <b id="statPoses">0</b></span>
     <span>scan <b id="statScan">none</b></span>
+    <span>aligned <b id="statAlign">—</b></span>
   </div>
   <div class="controls">
     <button id="btnUndo">Undo<kbd>U</kbd></button>
     <button class="primary" id="btnCapture">Capture point<kbd>SPACE</kbd></button>
     <button id="btnNext">Next object<kbd>N</kbd></button>
+    <button id="btnReference">Reference<kbd>E</kbd></button>
     <button id="btnRecenter">Recenter<kbd>R</kbd></button>
     <button id="btnDone">Finish<kbd>F</kbd></button>
     <label class="upload" for="scanFile">Upload scan</label>
@@ -425,6 +427,103 @@ addEventListener('orientationchange', () => setTimeout(() => { resize(); resetVi
 resize();
 distance = HOME_VIEW.distance * framingForAspect();
 
+/* -------------------------------------------------- scan + registration --- */
+/* The scan arrives in the phone's own frame. Pairing features the arm has
+   physically touched with the same features clicked in the scan is what ties
+   the two frames together; three pairs determine the rigid transform. */
+let scanCloud = null;
+let loadedScan = null;
+let scanRegistered = false;
+let referencePoints = [];
+const pairs = [];               // {scan:[x,y,z], robot:[x,y,z]}
+
+const markerGeometry = new THREE.SphereGeometry(0.018, 16, 12);
+const referenceMaterial = new THREE.MeshStandardMaterial({color:0x171214, roughness:.4});
+const pairedMaterial = new THREE.MeshStandardMaterial({color:0x1E8E5A, roughness:.4});
+const referenceGroup = new THREE.Group(); world.add(referenceGroup);
+
+function setReferenceMarkers(list){
+  while (referenceGroup.children.length > list.length) referenceGroup.remove(referenceGroup.children.at(-1));
+  list.forEach((p, index) => {
+    let marker = referenceGroup.children[index];
+    if (!marker){
+      marker = new THREE.Mesh(markerGeometry, referenceMaterial);
+      referenceGroup.add(marker);
+    }
+    marker.position.set(p[0], p[1], p[2]);
+    marker.material = index < pairs.length ? pairedMaterial : referenceMaterial;
+  });
+}
+
+async function loadScan(){
+  const data = await (await fetch('/api/scan_points', {headers: authHeaders})).json();
+  if (scanCloud){ world.remove(scanCloud); scanCloud.geometry.dispose(); scanCloud = null; }
+  if (!data.points || !data.points.length) return;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.points, 3));
+  scanRegistered = data.registered;
+  scanCloud = new THREE.Points(geometry, new THREE.PointsMaterial({
+    size: 0.006,
+    color: scanRegistered ? 0xC2183C : 0x9AA0A6,
+    transparent: true,
+    opacity: scanRegistered ? 0.65 : 0.42,
+  }));
+  world.add(scanCloud);
+  el('statAlign').textContent = scanRegistered ? `${data.rmse_mm} mm` : 'not yet';
+}
+
+const raycaster = new THREE.Raycaster();
+raycaster.params.Points.threshold = 0.02;
+
+function pickScanPoint(clientX, clientY){
+  if (!scanCloud) return null;
+  const ndc = new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObject(scanCloud);
+  if (!hits.length) return null;
+  // Back into robot-frame coordinates: the cloud lives under the Z-up world group.
+  return world.worldToLocal(hits[0].point.clone()).toArray();
+}
+
+async function tryPair(clientX, clientY){
+  if (!scanCloud || scanRegistered) return;
+  if (pairs.length >= referencePoints.length){
+    toast('touch another reference point with the arm first', 'warn');
+    return;
+  }
+  const picked = pickScanPoint(clientX, clientY);
+  if (!picked) return;
+
+  pairs.push({scan: picked, robot: referencePoints[pairs.length]});
+  setReferenceMarkers(referencePoints);
+  toast(`paired ${pairs.length} of 3 needed`);
+
+  if (pairs.length >= 3){
+    const response = await (await fetch('/api/register', {
+      method:'POST', headers:{'Content-Type':'application/json', ...authHeaders},
+      body: JSON.stringify({scan: pairs.map(p => p.scan), robot: pairs.map(p => p.robot)})
+    })).json();
+    if (response.error){ toast(response.error, 'warn'); return; }
+    toast(response.trustworthy
+      ? `aligned to ${response.rmse_mm} mm`
+      : `aligned but ${response.rmse_mm} mm off -- re-touch the references`,
+      response.trustworthy ? '' : 'warn');
+    await loadScan();
+  }
+}
+
+/* A tap is a click that did not become a drag: on a phone every orbit starts
+   with a pointerdown, so distance and duration are what separate them. */
+let tapStart = null;
+canvas.addEventListener('pointerdown', e => { tapStart = {x: e.clientX, y: e.clientY, t: performance.now()}; });
+canvas.addEventListener('pointerup', e => {
+  if (!tapStart) return;
+  const moved = Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y);
+  if (moved < 8 && performance.now() - tapStart.t < 350) tryPair(e.clientX, e.clientY);
+  tapStart = null;
+});
+
 /* ---------------------------------------------------------------- state --- */
 let lastSeen = 0, lastPointCount = 0;
 const el = id => document.getElementById(id);
@@ -453,6 +552,13 @@ function render(state){
   el('statPoses').textContent = state.pose_samples ?? 0;
   const scans = state.scans || [];
   el('statScan').textContent = scans.length ? scans[scans.length - 1] : 'none';
+  if (scans.length && scans[scans.length - 1] !== loadedScan){
+    loadedScan = scans[scans.length - 1];
+    pairs.length = 0;
+    loadScan();
+  }
+  referencePoints = state.references || [];
+  setReferenceMarkers(referencePoints);
   el('meterFill').style.width = Math.round((state.progress || 0) * 100) + '%';
 
   if (state.tip){
@@ -521,6 +627,7 @@ el('btnUndo').onclick    = () => send('undo');
 el('btnNext').onclick    = () => send('next');
 el('btnDone').onclick    = () => send('done');
 el('btnRecenter').onclick = () => { resetView(); toast('view reset'); };
+el('btnReference').onclick = () => send('reference');
 el('scanFile').addEventListener('change', async event => {
   const file = event.target.files[0];
   if (!file) return;
@@ -539,6 +646,7 @@ addEventListener('keydown', e => {
   else if (k === 'n') send('next');
   else if (k === 'f') send('done');
   else if (k === 'r'){ resetView(); toast('view reset'); }
+  else if (k === 'e') send('reference');
 });
 
 function tick(now){

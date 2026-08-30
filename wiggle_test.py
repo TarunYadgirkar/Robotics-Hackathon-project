@@ -3,12 +3,19 @@
 Read-only: every frame commands zero gain and zero torque, so the arm stays limp
 throughout and you can move it and the cabling by hand freely.
 
-Deliberately does NOT clear latched errors. The error word a motor carries when
-it comes back is the evidence we need:
+Errors are cleared ONCE at startup to establish a clean baseline, and never
+again -- the state a motor is in when it returns is the evidence:
 
-  * back as 'communication lost' (0xD) -> it stayed POWERED and latched its own
-    watchdog, so the CAN line was interrupted.
-  * back clean as 'enabled' with nothing latched -> it was POWER-CYCLED.
+  * back as 'disabled' (0x0) -> the motor REBOOTED, because a reboot is the only
+    thing that puts an enabled motor back into the disabled state. That means it
+    lost POWER.
+  * back as 'enabled' or 'communication lost' (0xD) -> it kept running the whole
+    time and simply could not be reached, so the CAN SIGNAL was interrupted.
+
+The continuous polling matters: a DM motor left enabled with no command stream
+latches 0xD on its own watchdog within seconds, which is why an idle arm shows
+0xD everywhere and why that code means nothing unless it appears right after a
+dropout.
 
 Usage:
   .venv/bin/python wiggle_test.py            # 120 s
@@ -24,7 +31,8 @@ import can
 
 from yam import can_compat
 from yam.arm import ARM_JOINTS, GRIPPER_JOINT
-from yam.dm_motor import FEEDBACK_ID_OFFSET, decode_feedback, encode_mit_command
+from yam.dm_motor import (CLEAR_ERROR, ENABLE, FEEDBACK_ID_OFFSET,
+                          decode_feedback, encode_mit_command)
 
 JOINTS = ARM_JOINTS + [GRIPPER_JOINT]
 
@@ -46,6 +54,22 @@ def poll(bus, joint, timeout=0.03):
 def main():
     duration = float(sys.argv[1]) if len(sys.argv) > 1 else 120.0
     bus = can_compat.open_bus()
+
+    # Clear once, then enable, so every motor starts from a known good state.
+    for joint in JOINTS:
+        for _ in range(3):
+            bus.send(can.Message(arbitration_id=joint.motor_id,
+                                 data=bytearray(CLEAR_ERROR), is_extended_id=False))
+            time.sleep(0.004)
+    time.sleep(0.2)
+    while bus.recv(timeout=0.01) is not None:
+        pass
+    for joint in JOINTS:
+        bus.send(can.Message(arbitration_id=joint.motor_id,
+                             data=bytearray(ENABLE), is_extended_id=False))
+        time.sleep(0.02)
+        while bus.recv(timeout=0.01) is not None:
+            pass
 
     online = {j.name: True for j in JOINTS}
     status = {j.name: "enabled" for j in JOINTS}
@@ -105,20 +129,18 @@ def main():
     for label, count in recovery_codes.most_common():
         print(f"  {label}  x{count}")
 
-    latched = any("communication lost" in k for k in recovery_codes)
-    clean = any(k.endswith(":enabled") for k in recovery_codes)
+    rebooted = any(":disabled" in k for k in recovery_codes)
+    stayed_up = any((":enabled" in k or "communication lost" in k) for k in recovery_codes)
     print()
-    if latched and not clean:
-        print("VERDICT: motors stayed powered and latched their watchdog.")
-        print("  -> the CAN signal line is being interrupted. Check the CAN")
+    if rebooted:
+        print("VERDICT: motors came back DISABLED, which only a reboot does.")
+        print("  -> they lost POWER. Check the supply connector at the arm, the")
+        print("     PSU itself, and any part of the power path that flexes.")
+    elif stayed_up:
+        print("VERDICT: motors came back still enabled (or watchdog-latched), so")
+        print("  they never stopped running -- they were just unreachable.")
+        print("  -> the CAN SIGNAL line is being interrupted. Check the CAN")
         print("     connector and the twisted pair, not the power supply.")
-    elif clean and not latched:
-        print("VERDICT: motors came back with no latched error at all.")
-        print("  -> they lost POWER and rebooted. Check the supply connector,")
-        print("     the PSU, and anything in the power path that flexes.")
-    elif latched and clean:
-        print("VERDICT: mixed -- some latched, some rebooted. Suggests a shared")
-        print("  connector carrying both power and CAN, or two separate faults.")
 
     if len(dropouts) == 1:
         print(f"\nOnly {list(dropouts)[0]} ever dropped: suspect its own stub/connector")

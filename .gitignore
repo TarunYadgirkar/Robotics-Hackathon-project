@@ -8,3 +8,6 @@ __pycache__/
 .playwright-mcp/
 enrollment.json
 *.npz
+*.ply
+*.obj
+workcell_map.npz

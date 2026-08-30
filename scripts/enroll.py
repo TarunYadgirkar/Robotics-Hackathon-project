@@ -167,10 +167,14 @@ def main() -> None:
                 obstacle = session.current
 
                 command = server.next_command()
-                if command in ("capture", ""):
+                if command in ("capture", "reference", ""):
                     if command == "capture":
                         session.capture(tip, q)
-                        message, message_kind = f"captured point {len(obstacle.points)}", ""
+                        message, message_kind = f"captured point {len(obstacle.positions())}", ""
+                    elif command == "reference":
+                        session.capture(tip, q, label=EnrollmentSession.REFERENCE_LABEL)
+                        message = f"reference {len(session.reference_points())} set -- now tap it in the scan"
+                        message_kind = ""
                 elif command == "undo":
                     message = "undid last point" if session.undo() else "nothing to undo"
                     message_kind = "" if session.current.points else "warn"
@@ -196,8 +200,9 @@ def main() -> None:
                     "joints": q,
                     "tip": tip.tolist(),
                     "link_transforms": {name: matrix.ravel().tolist() for name, matrix in transforms.items()},
-                    "points": [p.position for p in obstacle.points],
-                    "point_count": len(obstacle.points),
+                    "points": obstacle.positions().tolist(),
+                    "point_count": len(obstacle.positions()),
+                    "references": [p.position for p in session.reference_points()],
                     "patches": obstacle.patch_coverage().tolist(),
                     "progress": obstacle.progress,
                     "box_min": None if bounds is None else bounds[0].tolist(),
