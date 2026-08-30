@@ -19,6 +19,7 @@
  .legend{position:fixed;right:26px;top:22px;font-size:12px;color:var(--muted);background:#fff;border-radius:12px;padding:12px 14px;
          box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 24px rgba(0,0,0,.06);line-height:1.7}
  .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+ .contact-list{margin:5px 0 0 17px;color:#287066;line-height:1.45}
 </style></head><body>
 <canvas id="scene"></canvas>
 <header>
@@ -29,11 +30,14 @@
 <div class="legend">
   <div><span class="sw" style="background:#E9A6B8"></span>arm</div>
   <div><span class="sw" style="background:#C2183C"></span>LiDAR scan, registered (arm subtracted)</div>
+  <div><span class="sw" style="background:#D87824"></span>specified base clamps (synthetic)</div>
   <div><span class="sw" style="background:#171214"></span>tip path</div>
+  <div><span class="sw" style="background:#2E8B7D"></span>closest safe stand-off</div>
+  <div class="contact-list" id="contact-list"></div>
 </div>
 <footer>
   <div class="bar"><i id="fill"></i></div>
-  <div class="row"><span>pose <b id="n">0</b></span><span>obstacles drawn <b id="shown">-</b></span><span id="ang"></span></div>
+  <div class="row"><span>pose <b id="n">0</b></span><span>obstacles drawn <b id="shown">-</b></span><span id="touch"></span><span id="ang"></span></div>
   <div style="display:flex;gap:10px"><button id="play">Pause</button><button id="focus">Centre on arm</button></div>
 </footer>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -67,9 +71,7 @@ const REACH=0.85;                       // beyond this the arm cannot touch anyt
 const near=[];
 for(let i=0;i<v.length;i+=3){
   const x=v[i],y=v[i+1],z=v[i+2];
-  // Everything here is measured geometry from the scan -- the table with its
-  // real edge, the clamps, whatever else is on the bench. Nothing is culled
-  // except what lies outside the arm's reach.
+  // Nothing is culled except what lies outside the arm's reach.
   if(Math.hypot(x,y)<=REACH && z<=0.9) near.push([x,y,z]);
 }
 const inst=new THREE.InstancedMesh(
@@ -79,11 +81,33 @@ const inst=new THREE.InstancedMesh(
 const dummy=new THREE.Object3D();
 near.forEach((p,i)=>{ dummy.position.set(p[0],p[1],p[2]); dummy.updateMatrix(); inst.setMatrixAt(i,dummy.matrix); });
 world.add(inst);
-document.getElementById('shown').textContent=`${near.length.toLocaleString()} of ${(v.length/3).toLocaleString()}`;
+
+const synthetic=DATA.syntheticVoxels || [];
+const modeled=[];
+for(let i=0;i<synthetic.length;i+=3){
+  const x=synthetic[i],y=synthetic[i+1],z=synthetic[i+2];
+  if(Math.hypot(x,y)<=REACH && z<=0.9) modeled.push([x,y,z]);
+}
+const modeledInst=new THREE.InstancedMesh(
+  new THREE.BoxGeometry(DATA.voxelSize*0.92,DATA.voxelSize*0.92,DATA.voxelSize*0.92),
+  new THREE.MeshStandardMaterial({color:0xD87824,transparent:true,opacity:.82,roughness:.65}),
+  modeled.length);
+modeled.forEach((p,i)=>{ dummy.position.set(p[0],p[1],p[2]); dummy.updateMatrix(); modeledInst.setMatrixAt(i,dummy.matrix); });
+world.add(modeledInst);
+const totalObstacles=v.length/3+synthetic.length/3;
+document.getElementById('shown').textContent=`${(near.length+modeled.length).toLocaleString()} of ${totalObstacles.toLocaleString()}`;
 
 const tip=DATA.tip.flat();
 world.add(new THREE.Line(new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute(tip,3)),
   new THREE.LineBasicMaterial({color:0x171214})));
+
+const contactMaterial=new THREE.MeshStandardMaterial({color:0x2E8B7D,roughness:.45});
+for(const contact of DATA.contacts || []){
+  const marker=new THREE.Mesh(new THREE.SphereGeometry(.016,18,12),contactMaterial);
+  marker.position.set(...contact.position); world.add(marker);
+}
+document.getElementById('contact-list').innerHTML=(DATA.contacts || []).map((contact,index)=>
+  `${index+1}. ${contact.name}`).join('<br>');
 
 let yaw=0.9,pitch=0.32,dist=1.2;
 const target=new THREE.Vector3(0,0.25,0);
@@ -117,6 +141,8 @@ function setFrame(i){
   document.getElementById('n').textContent=`${i+1}/${DATA.frames.length}`;
   document.getElementById('fill').style.width=((i+1)/DATA.frames.length*100)+'%';
   document.getElementById('ang').innerHTML=DATA.angles[i].map((a,j)=>`${DATA.joints[j]} <b>${a.toFixed(0)}&deg;</b>`).join('  ');
+  const contact=(DATA.contacts || []).find(item=>item.index===i);
+  document.getElementById('touch').innerHTML=contact ? `waypoint <b>${contact.name}</b>` : '';
 }
 let framedOnce=false;
 function tick(t){

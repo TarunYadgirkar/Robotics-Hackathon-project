@@ -430,7 +430,7 @@ distance = HOME_VIEW.distance * framingForAspect();
 /* -------------------------------------------------- scan + registration --- */
 /* The scan arrives in the phone's own frame. Pairing features the arm has
    physically touched with the same features clicked in the scan is what ties
-   the two frames together; three pairs determine the rigid transform. */
+   the two frames together; four spread-out pairs determine and check the rigid transform. */
 let scanCloud = null;
 let loadedScan = null;
 let scanRegistered = false;
@@ -497,9 +497,9 @@ async function tryPair(clientX, clientY){
 
   pairs.push({scan: picked, robot: referencePoints[pairs.length]});
   setReferenceMarkers(referencePoints);
-  toast(`paired ${pairs.length} of 3 needed`);
+  toast(`paired ${pairs.length} of 4 needed`);
 
-  if (pairs.length >= 3){
+  if (pairs.length >= 4){
     const response = await (await fetch('/api/register', {
       method:'POST', headers:{'Content-Type':'application/json', ...authHeaders},
       body: JSON.stringify({scan: pairs.map(p => p.scan), robot: pairs.map(p => p.robot)})

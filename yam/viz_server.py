@@ -35,6 +35,7 @@ class VizServer:
         self.uploads: list = []
         self.scan_summary: Optional[Dict[str, Any]] = None
         self.scan_points = None          # numpy array, downsampled for the viewer
+        self.scan_pose = None
         self.registration: Optional[Dict[str, Any]] = None
         self.kinematics = None
         #: Guards the API once the server is reachable beyond this machine. The
@@ -225,7 +226,7 @@ class VizServer:
                 try:
                     payload = json.loads(self.rfile.read(length) or b"{}")
                     seed = payload["seed"]
-                    pose = payload["pose"]
+                    requested_pose = payload["pose"]
                 except (json.JSONDecodeError, KeyError, TypeError):
                     self._send_json({"error": "expected {seed: [x,y,z], pose: [6 joint angles]}"}, 400)
                     return
@@ -236,16 +237,28 @@ class VizServer:
 
                 from yam.kinematics import YamKinematics
                 from yam.scan_registration import dense_arm_surface, refine_from_seed
+                import numpy as np
 
                 kinematics = server.kinematics or YamKinematics()
+                pose = server.scan_pose or requested_pose
                 model = dense_arm_surface(kinematics, pose, max_points=3000)
-                result = refine_from_seed(server.scan_points, model, seed)
+                state = server.snapshot()
+                measured_surfaces = np.asarray(
+                    (state.get("points") or []) + (state.get("references") or []),
+                    dtype=float,
+                ).reshape(-1, 3)
+                result = refine_from_seed(
+                    server.scan_points,
+                    model,
+                    seed,
+                    surface_points=measured_surfaces,
+                )
 
                 if result is None:
                     self._send_json({"error": "no fit found near that point"}, 400)
                     return
 
-                server.registration = {
+                candidate = {
                     "rotation": result.rotation.tolist(),
                     "translation": result.translation.tolist(),
                     "rmse_mm": round(result.rmse * 1000, 1),
@@ -253,9 +266,23 @@ class VizServer:
                     "inliers": result.inliers,
                     "model_points": result.model_points,
                     "trustworthy": bool(result.is_trustworthy),
-                    "method": "arm-shape ICP from a seed",
+                    "verdict": result.verdict,
+                    "model_p95_mm": round(result.model_p95_error * 1000, 1),
+                    "surface_rmse_mm": (
+                        None if result.surface_rmse is None else round(result.surface_rmse * 1000, 1)
+                    ),
+                    "surface_max_error_mm": (
+                        None if result.surface_max_error is None
+                        else round(result.surface_max_error * 1000, 1)
+                    ),
+                    "surface_points": result.surface_points,
+                    "uncertainty_mm": round(result.uncertainty * 1000, 1),
+                    "scan_pose": pose,
+                    "method": "arm shape plus touched surfaces",
                 }
-                self._send_json(server.registration)
+                if result.is_trustworthy:
+                    server.registration = candidate
+                self._send_json(candidate)
 
             def _erase(self):
                 """Delete scanned geometry inside a sphere.
@@ -298,21 +325,27 @@ class VizServer:
                 try:
                     import numpy as np
 
-                    from yam.lidar import kabsch
+                    from yam.lidar import gravity_aligned_kabsch
 
-                    result = kabsch(np.array(payload["scan"]), np.array(payload["robot"]))
+                    result = gravity_aligned_kabsch(
+                        np.array(payload["scan"]), np.array(payload["robot"])
+                    )
                 except Exception as error:
                     self._send_json({"error": str(error)}, 400)
                     return
 
-                server.registration = {
+                candidate = {
                     "rotation": result.rotation.tolist(),
                     "translation": result.translation.tolist(),
                     "rmse_mm": round(result.rmse * 1000, 1),
                     "pairs": len(payload["scan"]),
                     "trustworthy": bool(result.is_trustworthy),
+                    "uncertainty_mm": round(result.uncertainty * 1000, 1),
+                    "gravity_constrained": True,
                 }
-                self._send_json(server.registration)
+                if result.is_trustworthy:
+                    server.registration = candidate
+                self._send_json(candidate)
 
             def _receive_scan(self):
                 """Accept a scan file uploaded from the phone that captured it."""
@@ -354,6 +387,12 @@ class VizServer:
                     summary["points_kept"] = int(len(merged))
                     summary["points_replaced"] = int(replaced)
                     server.scan_points = merged
+                    live_pose = server.snapshot().get("joints")
+                    server.scan_pose = (
+                        [float(value) for value in live_pose[:6]]
+                        if live_pose is not None and len(live_pose) >= 6
+                        else None
+                    )
                     server.registration = None
                     server.scan_summary = summary
                 except Exception as error:

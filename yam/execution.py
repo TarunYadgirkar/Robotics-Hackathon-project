@@ -1,36 +1,11 @@
 """Guarded execution of a planned path.
 
-A verified plan only protects against obstacles that are *in the model*. It says
-nothing about model error -- bad kinematics, an obstacle enrolled a few
-centimetres from where it really is, or something that moved after the scan. The
-guard is what covers that, by watching the arm rather than the model.
-
-WHAT DOES NOT WORK, measured on this arm rather than assumed:
-
-* Tracking error and measured torque are NOT two independent signals. In MIT
-  mode the motor's torque is kp * tracking_error (plus damping), so the two are
-  proportional and one trips on the other's slack.
-* A flat torque ceiling is useless here. Joint 3 draws ~9.5Nm lifting the arm's
-  own weight from the folded pose, and up to 11Nm during a tuck -- the whole of
-  the MJCF's 10Nm actuatorfrcrange. Any ceiling below that aborts every ordinary
-  move; any ceiling above it no longer detects contact.
-* Gravity feedforward from MuJoCo's `qfrc_bias` is not a fix, because the shipped
-  inertial model does not match this hardware. It over-predicts in some poses
-  (6.91Nm modelled against 0.02Nm measured, consistent with a shoulder
-  counterbalance the model omits) and under-predicts in others (3.83 against
-  7.66). The collision geometry is trustworthy; the mass properties are not.
-
-WHAT THIS USES INSTEAD. Gravity load is large but changes *slowly and smoothly*
-as the pose changes; a collision is a *step*. So the guard compares each joint's
-torque against a slow exponential baseline of its own recent torque, and treats
-the residual as the contact signal. That needs no mass model and no ceiling
-tuned per trajectory. A hard absolute backstop and a generous tracking-error
-limit sit behind it for the cases a step never appears in -- a gradual squeeze.
-
-Every gravity number above was measured by a second session on this arm; see the
-commit history for the raw walk-up.
+The residual-torque guard is an implementation awaiting hardware validation.
+No raw calibration or deliberate-contact trace is present in this repository,
+so its provisional thresholds cannot authorize motion.
 """
 
+import hashlib
 import time
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence
@@ -38,6 +13,8 @@ from typing import Callable, List, Optional, Sequence
 import numpy as np
 
 from yam.arm import ArmState, YamArm
+from yam.hardware_calibration import HardwareSafetyCalibration
+from yam.safety_contract import ApprovedPlan, normalized_tracking_bounds
 
 
 class ExecutionAborted(RuntimeError):
@@ -49,31 +26,35 @@ class ExecutionAborted(RuntimeError):
 
 @dataclass
 class GuardLimits:
-    #: Nm a joint may deviate from its own recent torque before we call it contact.
-    #: Per-joint, not uniform: measured over 7234 samples of a full wave, the
-    #: peak residual ranges from 0.03Nm on joint1 to 3.09Nm on joint3, which
-    #: legitimately steps that hard breaking away from stiction on a lift. One
-    #: number cannot serve both -- 2.5Nm false-trips joint3 and is ~10x too
-    #: loose to notice anything happening at the wrist. These are roughly 1.5x
-    #: each joint's measured peak, with a floor so no joint is hair-trigger.
+    #: Provisional values retained for offline guard tests only.
     max_torque_residual: Sequence[float] = (0.5, 1.5, 4.5, 2.0, 0.8, 0.8)
-    #: Hard backstop for a gradual squeeze that never produces a step. A soak
-    #: measured 12.36Nm under ordinary load, so the headroom here is about 0.6Nm
-    #: -- deliberately tight, and worth re-measuring before it is raised.
     absolute_torque: float = 13.0
-    #: The planner verifies the path inside this envelope, so it is not just a
-    #: backstop -- it is the promise the plan is checked against. 0.35 rad was
-    #: chosen to accommodate the worst unguarded sag ever measured, but verifying
-    #: a path against +-20deg of lag fails almost every path. Held to 0.10 rad
-    #: (5.7deg) instead, which the measured sag under gain 0.5 stays inside
-    #: (joint4 drooped 3.6deg), and enforced rather than tolerated.
-    max_tracking_error: float = 0.10
+    max_tracking_error: Sequence[float] | float = 0.10
     max_temperature: float = 65.0
     #: Seconds of exponential history the torque baseline averages over.
     baseline_seconds: float = 0.35
     #: Seconds before the residual guard arms, so the baseline can settle.
     warmup_seconds: float = 0.5
     require_free: bool = True
+    hardware_validated: bool = False
+    calibration_sha256: Optional[str] = None
+    calibrated_rate_hz: Optional[float] = None
+    calibrated_gain_scale: Optional[float] = None
+
+    @classmethod
+    def from_calibration(cls, calibration: HardwareSafetyCalibration) -> "GuardLimits":
+        return cls(
+            max_torque_residual=calibration.max_torque_residual_nm,
+            absolute_torque=calibration.absolute_torque_nm,
+            max_tracking_error=calibration.max_tracking_error_rad,
+            max_temperature=calibration.max_temperature_c,
+            baseline_seconds=calibration.baseline_seconds,
+            warmup_seconds=calibration.warmup_seconds,
+            hardware_validated=True,
+            calibration_sha256=calibration.sha256,
+            calibrated_rate_hz=calibration.rate_hz,
+            calibrated_gain_scale=calibration.gain_scale,
+        )
 
 
 @dataclass
@@ -88,10 +69,17 @@ class ExecutionReport:
 
 
 class GuardedExecutor:
-    def __init__(self, arm: YamArm, checker=None, limits: Optional[GuardLimits] = None):
+    def __init__(
+        self,
+        arm: YamArm,
+        checker=None,
+        limits: Optional[GuardLimits] = None,
+        map_sha256: Optional[str] = None,
+    ):
         self.arm = arm
         self.checker = checker
         self.limits = limits or GuardLimits()
+        self.map_sha256 = map_sha256
         self._baseline: Optional[np.ndarray] = None
         self._elapsed = 0.0
 
@@ -149,11 +137,12 @@ class GuardedExecutor:
                 state,
             )
 
-        worst = int(np.argmax(error))
-        if error[worst] > self.limits.max_tracking_error:
+        tracking_allowance = normalized_tracking_bounds(self.limits.max_tracking_error, len(error))
+        worst = int(np.argmax(error / tracking_allowance))
+        if error[worst] > tracking_allowance[worst]:
             raise ExecutionAborted(
                 f"{self.arm.joints[worst].name} is {np.degrees(error[worst]):.1f}deg behind its command "
-                f"-- something is resisting the arm",
+                f"(limit {np.degrees(tracking_allowance[worst]):.1f}deg) -- something is resisting the arm",
                 state,
             )
 
@@ -166,15 +155,60 @@ class GuardedExecutor:
 
     def run(
         self,
-        path: Sequence[Sequence[float]],
+        path: ApprovedPlan,
         rate_hz: float = 100.0,
         gain_scale: float = 0.5,
         on_sample: Optional[Callable[[int, ArmState], None]] = None,
     ) -> ExecutionReport:
+        if not self.limits.hardware_validated:
+            raise ExecutionAborted(
+                "contact guard is not hardware-validated; no calibration trace "
+                "in this repository supports its provisional thresholds"
+            )
+
+        if not isinstance(path, ApprovedPlan):
+            raise ExecutionAborted(
+                "motion has no safety approval certificate; raw trajectories cannot command the arm"
+            )
+        if self.limits.calibration_sha256 != path.calibration_sha256:
+            raise ExecutionAborted("the plan was approved under a different hardware calibration")
+        if self.map_sha256 is None or self.map_sha256 != path.map_sha256:
+            raise ExecutionAborted("the plan was approved against a different or unidentified workcell map")
+        if time.time() > path.issued_at_unix + path.valid_for_seconds:
+            raise ExecutionAborted("the path safety approval expired; observe the scene and plan again")
+        actual_path_hash = hashlib.sha256(np.asarray(path.path, dtype="<f8").tobytes()).hexdigest()
+        if actual_path_hash != path.path_sha256:
+            raise ExecutionAborted("the path changed after it was safety-approved")
+        if self.limits.calibrated_rate_hz is None or not np.isclose(
+            rate_hz, self.limits.calibrated_rate_hz, rtol=0.0, atol=1e-9
+        ):
+            raise ExecutionAborted(
+                f"execution rate {rate_hz:g}Hz does not match the calibrated rate "
+                f"{self.limits.calibrated_rate_hz!r}Hz"
+            )
+        if self.limits.calibrated_gain_scale is None or not np.isclose(
+            gain_scale, self.limits.calibrated_gain_scale, rtol=0.0, atol=1e-9
+        ):
+            raise ExecutionAborted(
+                f"gain scale {gain_scale:g} does not match the calibrated gain "
+                f"{self.limits.calibrated_gain_scale!r}"
+            )
+
+        start_state = self.arm.read_state()
+        start_error = np.abs(np.asarray(start_state.positions) - path.path[0])
+        start_tolerance = np.asarray(path.start_tolerance_rad)
+        if np.any(start_error > start_tolerance):
+            worst = int(np.argmax(start_error / start_tolerance))
+            raise ExecutionAborted(
+                f"live start pose differs from the approved path on {self.arm.joints[worst].name} "
+                f"by {np.degrees(start_error[worst]):.1f}deg; re-plan from the live pose",
+                start_state,
+            )
+
         report = ExecutionReport()
         period = 1.0 / rate_hz
 
-        for index, waypoint in enumerate(path):
+        for index, waypoint in enumerate(path.path):
             target = np.asarray(waypoint, dtype=float)
 
             if self.limits.require_free and self.checker is not None and not self.checker.is_free(target):

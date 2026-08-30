@@ -13,8 +13,9 @@ the ring the operator is actually filling in.
 
 import json
 import time
+from bisect import bisect_right
 from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -147,6 +148,23 @@ class EnrollmentSession:
     def reference_points(self) -> List[CapturedPoint]:
         return [p for o in self.objects for p in o.points if p.label == self.REFERENCE_LABEL]
 
+    def captured_positions(self) -> np.ndarray:
+        points = [point.position for obstacle in self.objects for point in obstacle.points]
+        return np.asarray(points, dtype=float).reshape(-1, 3)
+
+    def pose_at(self, timestamp: float) -> Tuple[PoseSample, int]:
+        """Return the pose held at `timestamp` from the change-based pose log."""
+        if not self.pose_log:
+            raise ValueError("the enrollment session has no logged arm poses")
+
+        index = bisect_right([sample.timestamp for sample in self.pose_log], timestamp) - 1
+        if index < 0:
+            raise ValueError(
+                f"timestamp {timestamp:.3f} predates the first logged pose "
+                f"at {self.pose_log[0].timestamp:.3f}"
+            )
+        return self.pose_log[index], index
+
     def capture(self, position: Sequence[float], joint_angles: Sequence[float], label: str = "") -> CapturedPoint:
         if self.current is None:
             self.begin_object("object_1")
@@ -239,7 +257,7 @@ def touch_repeatability(kinematics, joint_configurations: Sequence[Sequence[floa
     at once. If FK, the joint scaling or the zero offsets are wrong, these points
     scatter; the scatter is the error budget every enrolled obstacle inherits.
     """
-    positions = np.array([kinematics.tip_position(q) for q in joint_configurations])
+    positions = np.array([kinematics.probe_position(q) for q in joint_configurations])
     centroid = positions.mean(axis=0)
     deviations = np.linalg.norm(positions - centroid, axis=1)
     return {

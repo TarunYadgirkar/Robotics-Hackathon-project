@@ -81,6 +81,11 @@ def load_point_cloud(path: str) -> np.ndarray:
     )
 
 
+def scan_timestamp_from_path(path: str) -> Optional[float]:
+    match = re.search(r"phone_scan_(\d+(?:\.\d+)?)", os.path.basename(path))
+    return float(match.group(1)) if match else None
+
+
 @dataclass
 class Registration:
     rotation: np.ndarray
@@ -93,7 +98,15 @@ class Registration:
 
     @property
     def is_trustworthy(self) -> bool:
-        return self.rmse < 0.02
+        return bool(
+            len(self.per_point_error) >= 4
+            and self.rmse < 0.02
+            and self.per_point_error.max() < 0.03
+        )
+
+    @property
+    def uncertainty(self) -> float:
+        return float(self.per_point_error.max()) if len(self.per_point_error) else float("inf")
 
 
 def kabsch(source: np.ndarray, target: np.ndarray) -> Registration:
@@ -104,6 +117,14 @@ def kabsch(source: np.ndarray, target: np.ndarray) -> Registration:
         raise ValueError(f"need matching counts, got {len(source)} and {len(target)}")
     if len(source) < 3:
         raise ValueError("need at least 3 correspondences to fix a rigid transform")
+
+    for name, points in (("scan", source), ("robot", target)):
+        singular_values = np.linalg.svd(points - points.mean(axis=0), compute_uv=False)
+        if singular_values[0] < 0.05 or singular_values[1] < singular_values[0] * 0.10:
+            raise ValueError(
+                f"{name} correspondences are too close together or nearly collinear; "
+                "use landmarks spread across the workcell"
+            )
 
     source_centre = source.mean(axis=0)
     target_centre = target.mean(axis=0)
@@ -119,6 +140,30 @@ def kabsch(source: np.ndarray, target: np.ndarray) -> Registration:
 
     residuals = np.linalg.norm(source @ rotation.T + translation - target, axis=1)
     return Registration(rotation, translation, float(np.sqrt((residuals ** 2).mean())), residuals)
+
+
+def gravity_aligned_kabsch(source: np.ndarray, target: np.ndarray) -> Registration:
+    """Fit ARKit scan landmarks to robot landmarks without tilting gravity."""
+    from yam.scan_registration import ARKIT_TO_ZUP
+
+    source = np.asarray(source, dtype=float).reshape(-1, 3)
+    target = np.asarray(target, dtype=float).reshape(-1, 3)
+    kabsch(source, target)
+
+    upright = source @ ARKIT_TO_ZUP.T
+    source_xy = upright[:, :2] - upright[:, :2].mean(axis=0)
+    target_xy = target[:, :2] - target[:, :2].mean(axis=0)
+    u, _, vt = np.linalg.svd(source_xy.T @ target_xy)
+    correction = np.eye(2)
+    correction[1, 1] = np.sign(np.linalg.det(vt.T @ u.T))
+    horizontal_rotation = vt.T @ correction @ u.T
+
+    upright_to_robot = np.eye(3)
+    upright_to_robot[:2, :2] = horizontal_rotation
+    rotation = upright_to_robot @ ARKIT_TO_ZUP
+    translation = target.mean(axis=0) - rotation @ source.mean(axis=0)
+    residuals = np.linalg.norm(source @ rotation.T + translation - target, axis=1)
+    return Registration(rotation, translation, float(np.sqrt(np.mean(residuals ** 2))), residuals)
 
 
 def filter_robot_from_scan(points: np.ndarray, kinematics, poses, padding: float = 0.03,

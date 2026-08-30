@@ -81,6 +81,7 @@ class RRTConnectPlanner:
 
         start_tree, start_parents = [start], [-1]
         goal_tree, goal_parents = [goal], [-1]
+        active_tree_starts_at_start = True
 
         for iteration in range(self.config.max_iterations):
             target = goal if self.rng.random() < self.config.goal_bias else self._sample()
@@ -91,11 +92,16 @@ class RRTConnectPlanner:
                 if bridge is not None and self.checker.segment_is_free(
                     start_tree[grown], goal_tree[bridge], self.config.collision_resolution
                 ):
-                    path = self._path_to_root(start_tree, start_parents, grown)
-                    path += self._path_to_root(goal_tree, goal_parents, bridge)[::-1]
+                    active_path = self._path_to_root(start_tree, start_parents, grown)
+                    other_path = self._path_to_root(goal_tree, goal_parents, bridge)
+                    if active_tree_starts_at_start:
+                        path = active_path + other_path[::-1]
+                    else:
+                        path = other_path + active_path[::-1]
                     return self.shortcut(path)
 
             start_tree, start_parents, goal_tree, goal_parents = goal_tree, goal_parents, start_tree, start_parents
+            active_tree_starts_at_start = not active_tree_starts_at_start
 
         raise PlanningError(
             f"no collision-free path found in {self.config.max_iterations} iterations; "

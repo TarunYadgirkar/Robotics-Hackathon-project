@@ -99,14 +99,19 @@ class MujocoCollisionChecker:
         self._ignore_mounted_base()
 
     def _ignore_mounted_base(self) -> None:
-        """The base is bolted to the table, so its resting contact with the ground is not a collision."""
-        ground = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "obstacle_ground")
-        if ground < 0:
-            return
+        """The fixed base may touch its table and clamps by construction."""
         base = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "base")
-        for geom_id in range(self.model.ngeom):
-            if self.model.geom_bodyid[geom_id] == base:
-                self.ignored_pairs.add(tuple(sorted((geom_id, ground))))
+        base_geometries = [
+            geom_id for geom_id in range(self.model.ngeom)
+            if self.model.geom_bodyid[geom_id] == base
+        ]
+        obstacle_geometries = [
+            geom_id for geom_id in range(self.model.ngeom)
+            if self._is_obstacle(geom_id)
+        ]
+        for base_geometry in base_geometries:
+            for obstacle_geometry in obstacle_geometries:
+                self.ignored_pairs.add(tuple(sorted((base_geometry, obstacle_geometry))))
 
     def _contact_pairs(self, q: Sequence[float]) -> List[Tuple[int, int, float]]:
         self.data.qpos[: self.joint_count] = np.asarray(q, dtype=float)[: self.joint_count]
@@ -182,11 +187,42 @@ class MujocoCollisionChecker:
     def is_free(self, q: Sequence[float]) -> bool:
         return not self._violations(q)
 
+    def obstacle_is_free(self, q: Sequence[float]) -> bool:
+        return all(
+            not (self._is_obstacle(g1) or self._is_obstacle(g2))
+            for g1, g2, _dist, _threshold in self._violations(q)
+        )
+
+    def self_is_free(self, q: Sequence[float]) -> bool:
+        return all(
+            self._is_obstacle(g1) or self._is_obstacle(g2)
+            for g1, g2, _dist, _threshold in self._violations(q)
+        )
+
     def clearance(self, q: Sequence[float]) -> float:
         """Worst margin-relative slack: how much room is left before the tightest pair trips."""
         smallest = float("inf")
         for g1, g2, dist in self._contact_pairs(q):
             if (g1, g2) in self.ignored_pairs:
+                continue
+            smallest = min(smallest, dist - self._threshold_for(g1, g2))
+        return smallest
+
+    def obstacle_clearance(self, q: Sequence[float]) -> float:
+        """Margin-relative slack for modelled world obstacles only."""
+        return self._clearance_for(q, obstacles=True)
+
+    def self_clearance(self, q: Sequence[float]) -> float:
+        """Margin-relative slack for robot self-collision only."""
+        return self._clearance_for(q, obstacles=False)
+
+    def _clearance_for(self, q: Sequence[float], obstacles: bool) -> float:
+        smallest = float("inf")
+        for g1, g2, dist in self._contact_pairs(q):
+            if (g1, g2) in self.ignored_pairs:
+                continue
+            is_obstacle = self._is_obstacle(g1) or self._is_obstacle(g2)
+            if is_obstacle != obstacles:
                 continue
             smallest = min(smallest, dist - self._threshold_for(g1, g2))
         return smallest

@@ -17,7 +17,7 @@ from typing import List, Optional, Sequence
 
 import numpy as np
 
-from yam.collision import World
+from yam.collision import Box, GRIPPER_LINKS, World
 from yam.mujoco_collision import MujocoCollisionChecker
 from yam.voxel_map import VoxelMap
 
@@ -37,46 +37,111 @@ class ArmSafetyChecker:
     ):
         self.kinematics = kinematics
         self.map = voxel_map
-        self.margin = margin
+        self.requested_margin = margin
+        self.registration_uncertainty = voxel_map.uncertainty
+        self.measured_margin = margin + self.registration_uncertainty
+        self.synthetic_margin = margin
+        # Kept for reporting compatibility: the largest world-model margin.
+        self.margin = margin + self.registration_uncertainty
         self.links = tuple(links)
         self.map.compute_distance_field()
 
-        # An empty world: this instance answers self-collision only, so the
-        # environment lives entirely in the voxel map.
+        synthetic_boxes = [
+            Box(
+                f"base_clamp_{index}",
+                np.asarray(box["min"], dtype=float),
+                np.asarray(box["max"], dtype=float),
+            )
+            for index, box in enumerate(
+                voxel_map.provenance.get("synthetic_geometry", {}).get("base_clamps", [])
+            )
+        ]
+
+        # MuJoCo checks the exact arm meshes against explicit boxes and also
+        # checks self-collision. The URDF spheres remain authoritative for the
+        # measured LiDAR and for gripper geometry missing from the MJCF.
         self.self_checker = MujocoCollisionChecker(
             arm_xml_path,
-            World(obstacles=[], ground_z=None, margin=0.0),
+            World(obstacles=synthetic_boxes, ground_z=None, margin=self.synthetic_margin),
             calibration_samples=calibration_samples,
             self_collision_margin=self_collision_margin,
         )
 
-    def environment_clearance(self, q: Sequence[float]) -> float:
+    def environment_clearances(self, q: Sequence[float]) -> tuple[float, float]:
         centers, radii = self.kinematics.collision_spheres(q, self.links)
         if len(centers) == 0:
-            return float("inf")
-        return float((self.map.distance_at(centers) - radii).min())
+            return float("inf"), float("inf")
+        measured = float((self.map.measured_distance_at(centers) - radii).min())
+        synthetic = self._synthetic_clearance(q, centers, radii)
+        return measured, synthetic
+
+    def _synthetic_clearance(
+        self,
+        q: Sequence[float],
+        centers: np.ndarray,
+        radii: np.ndarray,
+    ) -> float:
+        boxes = (
+            self.map.provenance.get("synthetic_geometry", {}).get("base_clamps", [])
+            if self.map.provenance
+            else []
+        )
+        if not boxes:
+            return float((self.map.synthetic_distance_at(centers) - radii).min())
+
+        smallest = self.self_checker.obstacle_clearance(q) + self.synthetic_margin
+        gripper_centers, gripper_radii = self.kinematics.collision_spheres(q, GRIPPER_LINKS)
+        for box in boxes:
+            minimum = np.asarray(box["min"], dtype=float)
+            maximum = np.asarray(box["max"], dtype=float)
+            outside = np.maximum(
+                np.maximum(minimum - gripper_centers, gripper_centers - maximum),
+                0.0,
+            )
+            smallest = min(
+                smallest,
+                float((np.linalg.norm(outside, axis=1) - gripper_radii).min()),
+            )
+        return smallest
+
+    def environment_clearance(self, q: Sequence[float]) -> float:
+        """Raw gap to the nearest measured or explicitly modeled obstacle."""
+        return min(self.environment_clearances(q))
+
+    def environment_slack(self, q: Sequence[float]) -> float:
+        measured, synthetic = self.environment_clearances(q)
+        return min(measured - self.measured_margin, synthetic - self.synthetic_margin)
 
     def environment_is_free(self, q: Sequence[float]) -> bool:
-        return self.environment_clearance(q) > self.margin
+        return self.environment_slack(q) > 0.0
 
     def self_is_free(self, q: Sequence[float]) -> bool:
-        return self.self_checker.is_free(q)
+        return self.self_checker.self_is_free(q)
 
     def is_free(self, q: Sequence[float]) -> bool:
         return self.environment_is_free(q) and self.self_is_free(q)
 
     def clearance(self, q: Sequence[float]) -> float:
-        return min(self.environment_clearance(q) - self.margin, self.self_checker.clearance(q))
+        return min(self.environment_slack(q), self.self_checker.self_clearance(q))
 
     def explain(self, q: Sequence[float]) -> List[str]:
         reasons = []
-        gap = self.environment_clearance(q)
-        if gap <= self.margin:
+        measured_gap, synthetic_gap = self.environment_clearances(q)
+        if measured_gap <= self.measured_margin:
             centers, radii = self.kinematics.collision_spheres(q, self.links)
-            worst = int(np.argmin(self.map.distance_at(centers) - radii))
+            worst = int(np.argmin(self.map.measured_distance_at(centers) - radii))
             reasons.append(
-                f"environment: arm sphere at {np.round(centers[worst], 3)} is {gap * 1000:+.1f}mm "
-                f"from the map (needs {self.margin * 1000:.0f}mm)"
+                f"measured environment: arm sphere at {np.round(centers[worst], 3)} is "
+                f"{measured_gap * 1000:+.1f}mm from LiDAR (needs {self.measured_margin * 1000:.0f}mm: "
+                f"{self.requested_margin * 1000:.0f}mm clearance + "
+                f"{self.registration_uncertainty * 1000:.0f}mm registration uncertainty)"
+            )
+        if synthetic_gap <= self.synthetic_margin:
+            centers, radii = self.kinematics.collision_spheres(q, self.links)
+            reasons.append(
+                f"modeled environment: moving arm is {synthetic_gap * 1000:+.1f}mm "
+                f"from explicit geometry "
+                f"(needs {self.synthetic_margin * 1000:.0f}mm)"
             )
         reasons.extend(self.self_checker.explain(q))
         return reasons

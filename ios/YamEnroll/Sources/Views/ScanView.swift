@@ -7,7 +7,7 @@ import SwiftUI
 /// Registration happens here rather than on the laptop because this is where
 /// the operator can see the feature they are pointing at. Touch a landmark with
 /// the arm (Reference, on the Enroll tab), then tap that same landmark on this
-/// screen; three pairs fix the transform.
+/// screen; four spread-out pairs fix and validate the transform.
 struct ScanView: View {
     @EnvironmentObject private var scanner: LidarScanner
     @EnvironmentObject private var client: ServerClient
@@ -52,7 +52,7 @@ struct ScanView: View {
             HStack(spacing: 14) {
                 metric("meshes", "\(scanner.meshCount)")
                 metric("vertices", format(scanner.vertexCount))
-                metric("paired", "\(pairs.count)/3")
+                metric("paired", "\(pairs.count)/4")
                 metric("refs", "\(references.count)")
                 if let uploadedPoints { metric("uploaded", format(uploadedPoints)) }
             }
@@ -69,7 +69,7 @@ struct ScanView: View {
             } else if erasing {
                 Text("Erase mode — tap to delete a 25cm ball of scan")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.red)
-            } else if uploadedPoints != nil && pairs.count < 3 {
+            } else if uploadedPoints != nil && pairs.count < 4 {
                 Text(references.isEmpty
                      ? "Set a Reference on the Enroll tab first"
                      : "Tap the spot matching reference \(pairs.count + 1)")
@@ -179,7 +179,7 @@ struct ScanView: View {
                         show(String(format: "aligned: %.1f mm over %@ points", rmse, coverage))
                         aligning = false
                     } else {
-                        show(String(format: "poor fit: %.0f mm over %@ — tap closer to the arm", rmse, coverage),
+                        show(String(format: "not validated: %.0f mm over %@ — capture 4 spread-out surfaces", rmse, coverage),
                              warning: true)
                     }
                 } catch {
@@ -212,10 +212,10 @@ struct ScanView: View {
         ))
         Haptics.tap()
 
-        if pairs.count >= 3 {
+        if pairs.count >= 4 {
             Task { await register() }
         } else {
-            show("paired \(pairs.count) of 3")
+            show("paired \(pairs.count) of 4")
         }
     }
 
@@ -233,7 +233,7 @@ struct ScanView: View {
             )
             uploadedPoints = summary.points ?? points.count
             Haptics.success()
-            show("sent \(format(summary.points ?? points.count)) points — now pair 3 landmarks")
+            show("sent \(format(summary.points ?? points.count)) points — now pair 4 landmarks")
         } catch {
             show("upload failed: \(error.localizedDescription)", warning: true)
         }

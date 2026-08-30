@@ -8,6 +8,7 @@ comes from ICP over the arm's known surface, not from the click.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import queue
@@ -17,9 +18,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
 
-from yam.enrollment import EnrollmentSession
+from yam.enrollment import EnrollmentSession, recompute_positions
 from yam.kinematics import YamKinematics
-from yam.lidar import load_point_cloud
+from yam.lidar import load_point_cloud, scan_timestamp_from_path
 from yam.mesh_export import export_arm_meshes
 from yam.scan_registration import dense_arm_surface, refine_from_seed
 
@@ -99,15 +100,40 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scan", required=True)
     parser.add_argument("--enrollment", default="enrollment.json")
+    parser.add_argument("--pose-index", type=int, default=None,
+                        help="logged arm pose to use; by default select the pose held when the "
+                             "timestamped scan file was uploaded")
+    parser.add_argument("--seed", type=float, nargs=3, default=None,
+                        help="ARKit x y z seed for a non-interactive one-shot registration")
     parser.add_argument("--port", type=int, default=8460)
     parser.add_argument("--output", default="registration.json")
     args = parser.parse_args()
 
     kinematics = YamKinematics()
     session = EnrollmentSession.load(args.enrollment)
-    pose = session.pose_log[0].joint_angles
+    recompute_positions(session, kinematics)
+    if args.pose_index is not None:
+        pose_index = args.pose_index
+        try:
+            pose_sample = session.pose_log[pose_index]
+        except IndexError as error:
+            raise SystemExit(f"pose index {pose_index} is outside the logged pose range") from error
+    else:
+        scan_timestamp = scan_timestamp_from_path(args.scan)
+        if scan_timestamp is None:
+            raise SystemExit(
+                "the scan filename has no timestamp; pass --pose-index for the pose held during the scan"
+            )
+        try:
+            pose_sample, pose_index = session.pose_at(scan_timestamp)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+
+    pose = pose_sample.joint_angles
+    measured_surfaces = session.captured_positions()
     scan = load_point_cloud(args.scan)
-    print(f"  scan {len(scan):,} points | arm pose from the start of the session")
+    print(f"  scan {len(scan):,} points | pose {pose_index} held from "
+          f"{pose_sample.timestamp:.3f} | {len(measured_surfaces)} touched surfaces")
 
     step = max(1, len(scan) // 60000)
     shown = scan[::step]
@@ -141,44 +167,61 @@ def main() -> None:
             self.send_response(200); self.send_header("Content-Length", "2"); self.end_headers()
             self.wfile.write(b"ok")
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    url = f"http://127.0.0.1:{args.port}/"
-    print(f"  open {url} and click the arm")
-    webbrowser.open(url)
+    if args.seed is None:
+        server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        url = f"http://127.0.0.1:{args.port}/"
+        print(f"  open {url} and click the arm")
+        webbrowser.open(url)
+    else:
+        seeds.put(args.seed)
 
     model = dense_arm_surface(kinematics, pose, max_points=3000)
     while True:
         seed = seeds.get()
         fit_state.clear(); fit_state["ready"] = False
         print(f"\n  seed at {np.round(seed, 3).tolist()} -- registering...")
-        result = refine_from_seed(scan, model, seed)
+        result = refine_from_seed(scan, model, seed, surface_points=measured_surfaces)
         if result is None:
+            if args.seed is not None:
+                raise SystemExit("  no fit near the supplied seed")
             print("  no fit near there. Try clicking closer to the middle of the arm.")
             continue
         print(f"  {result.describe()}  [{result.verdict}]")
 
-        # A single residual cannot separate a correct fit from a wrong yaw on
-        # this scanner, so confirm by re-fitting from a deliberately different
-        # seed. A wrong pose is a local minimum an unrelated seed will not find.
-        offset = np.array(seed) + np.array([0.18, -0.14, 0.12])
-        second = refine_from_seed(scan, model, offset.tolist())
-        if second is not None and result.agrees_with(second):
-            confirmed = True
-            print(f"  CONFIRMED: a seed 26cm away converged to the same pose "
-                  f"({second.rmse * 1000:.1f} mm)")
+        if result.is_trustworthy:
+            digest = hashlib.sha256()
+            with open(args.scan, "rb") as scan_file:
+                for chunk in iter(lambda: scan_file.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            record = {
+                "schema_version": 2,
+                "rotation": result.rotation.tolist(),
+                "translation": result.translation.tolist(),
+                "rmse_mm": result.rmse * 1000,
+                "model_p95_mm": result.model_p95_error * 1000,
+                "inliers": result.inliers,
+                "model_points": result.model_points,
+                "surface_rmse_mm": result.surface_rmse * 1000,
+                "surface_max_error_mm": result.surface_max_error * 1000,
+                "surface_points": result.surface_points,
+                "surface_spread_m": result.surface_spread,
+                "uncertainty_mm": result.uncertainty * 1000,
+                "verdict": result.verdict,
+                "trustworthy": True,
+                "gravity_constrained": True,
+                "method": "arm shape plus touched surfaces",
+                "scan_filename": os.path.basename(args.scan),
+                "scan_sha256": digest.hexdigest(),
+                "scan_pose_index": pose_index,
+                "scan_pose_timestamp": pose_sample.timestamp,
+                "scan_pose": pose,
+            }
+            with open(args.output, "w") as handle:
+                json.dump(record, handle, indent=2)
+            print(f"  wrote validated transform to {args.output}")
         else:
-            confirmed = False
-            print("  NOT CONFIRMED: a second seed found a different pose. "
-                  "Do not plan on this; click nearer the middle of the arm.")
-        with open(args.output, "w") as handle:
-            json.dump({"rotation": result.rotation.tolist(),
-                       "translation": result.translation.tolist(),
-                       "rmse_mm": result.rmse * 1000,
-                       "inliers": result.inliers,
-                       "verdict": result.verdict,
-                       "confirmed_by_second_seed": confirmed}, handle, indent=2)
-        print(f"  wrote {args.output}")
+            print("  NOT SAVED: the arm and touched surfaces do not jointly validate this transform")
 
         # Put the fitted model back into scan coordinates so the operator can see
         # exactly where it landed. The stored transform maps scan -> robot as
@@ -190,8 +233,12 @@ def main() -> None:
             "rmse": float(result.rmse * 1000),
             "model": np.round(placed, 4).ravel().tolist(),
         })
-        if confirmed:
+        if result.is_trustworthy and args.seed is None:
             print("  Ctrl-C here, then build the map from the scan.")
+        if args.seed is not None:
+            if not result.is_trustworthy:
+                raise SystemExit(1)
+            return
 
 
 if __name__ == "__main__":

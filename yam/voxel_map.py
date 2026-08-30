@@ -12,8 +12,8 @@ sit inside an RRT inner loop, and indifferent to how complicated the scan is.
 """
 
 import json
-from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy import ndimage
@@ -30,6 +30,11 @@ class VoxelMap:
     resolution: float
     occupancy: np.ndarray
     distance_field: Optional[np.ndarray] = None
+    measured_distance_field: Optional[np.ndarray] = None
+    synthetic_distance_field: Optional[np.ndarray] = None
+    uncertainty: float = 0.0
+    synthetic_occupancy: Optional[np.ndarray] = None
+    provenance: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_bounds(cls, minimum: Sequence[float], maximum: Sequence[float], resolution: float = 0.02) -> "VoxelMap":
@@ -59,15 +64,38 @@ class VoxelMap:
         if len(keep):
             self.occupancy[keep[:, 0], keep[:, 1], keep[:, 2]] = True
         self.distance_field = None
+        self.measured_distance_field = None
+        self.synthetic_distance_field = None
         return len(keep)
 
-    def add_box(self, minimum: Sequence[float], maximum: Sequence[float]) -> None:
+    def add_box(
+        self,
+        minimum: Sequence[float],
+        maximum: Sequence[float],
+        synthetic: bool = False,
+    ) -> None:
         low = np.clip(self.to_indices(np.asarray(minimum)[None, :])[0], 0, np.array(self.shape) - 1)
         high = np.clip(self.to_indices(np.asarray(maximum)[None, :])[0], 0, np.array(self.shape) - 1)
         self.occupancy[low[0]:high[0] + 1, low[1]:high[1] + 1, low[2]:high[2] + 1] = True
+        if synthetic:
+            if self.synthetic_occupancy is None:
+                self.synthetic_occupancy = np.zeros(self.shape, dtype=bool)
+            self.synthetic_occupancy[
+                low[0]:high[0] + 1,
+                low[1]:high[1] + 1,
+                low[2]:high[2] + 1,
+            ] = True
         self.distance_field = None
+        self.measured_distance_field = None
+        self.synthetic_distance_field = None
 
-    def carve_spheres(self, centers: np.ndarray, radii: np.ndarray, padding: float = 0.02) -> int:
+    def carve_spheres(
+        self,
+        centers: np.ndarray,
+        radii: np.ndarray,
+        padding: float = 0.02,
+        protect_below_z: Optional[float] = None,
+    ) -> int:
         """Clear voxels inside the given spheres.
 
         This is how the robot removes itself from its own scan. A LiDAR sweep of
@@ -90,11 +118,15 @@ class VoxelMap:
             )
             coordinates = self.origin + (np.stack(grids, axis=-1) + 0.5) * self.resolution
             inside = np.linalg.norm(coordinates - center, axis=-1) <= reach
+            if protect_below_z is not None:
+                inside &= coordinates[..., 2] >= protect_below_z
             block = self.occupancy[low[0]:high[0] + 1, low[1]:high[1] + 1, low[2]:high[2] + 1]
             cleared += int((block & inside).sum())
             block[inside] = False
 
         self.distance_field = None
+        self.measured_distance_field = None
+        self.synthetic_distance_field = None
         return cleared
 
     def compute_distance_field(self) -> np.ndarray:
@@ -112,6 +144,29 @@ class VoxelMap:
         if self.distance_field is None:
             self.compute_distance_field()
 
+        return self._distance_at(points, self.distance_field)
+
+    def measured_distance_at(self, points: np.ndarray) -> np.ndarray:
+        """Distance to LiDAR-derived occupancy, excluding explicit models."""
+        if self.measured_distance_field is None:
+            measured = self.occupancy
+            if self.synthetic_occupancy is not None:
+                measured = measured & ~self.synthetic_occupancy
+            self.measured_distance_field = self._distance_field_for(measured)
+        return self._distance_at(points, self.measured_distance_field)
+
+    def synthetic_distance_at(self, points: np.ndarray) -> np.ndarray:
+        """Distance to explicitly modeled occupancy such as the base clamps."""
+        if self.synthetic_distance_field is None:
+            synthetic = (
+                np.zeros(self.shape, dtype=bool)
+                if self.synthetic_occupancy is None
+                else self.occupancy & self.synthetic_occupancy
+            )
+            self.synthetic_distance_field = self._distance_field_for(synthetic)
+        return self._distance_at(points, self.synthetic_distance_field)
+
+    def _distance_at(self, points: np.ndarray, distance_field: np.ndarray) -> np.ndarray:
         points = np.asarray(points, dtype=float).reshape(-1, 3)
         indices = self.to_indices(points)
         inside = self._inside(indices)
@@ -119,18 +174,45 @@ class VoxelMap:
         distances = np.full(len(points), 0.0 if UNKNOWN_IS_BLOCKED else np.inf)
         if inside.any():
             valid = indices[inside]
-            distances[inside] = self.distance_field[valid[:, 0], valid[:, 1], valid[:, 2]]
+            distances[inside] = distance_field[valid[:, 0], valid[:, 1], valid[:, 2]]
         return distances
+
+    def _distance_field_for(self, occupancy: np.ndarray) -> np.ndarray:
+        if not occupancy.any():
+            return np.full(self.shape, np.inf)
+        return ndimage.distance_transform_edt(~occupancy, sampling=self.resolution)
 
     def occupied_points(self) -> np.ndarray:
         """Centre of every occupied voxel, for visualization."""
         indices = np.argwhere(self.occupancy)
         return self.origin + (indices + 0.5) * self.resolution
 
+    def measured_points(self) -> np.ndarray:
+        """Occupied voxel centres that came from measurements."""
+        mask = self.occupancy
+        if self.synthetic_occupancy is not None:
+            mask = mask & ~self.synthetic_occupancy
+        indices = np.argwhere(mask)
+        return self.origin + (indices + 0.5) * self.resolution
+
+    def synthetic_points(self) -> np.ndarray:
+        """Occupied voxel centres that came from explicitly modeled geometry."""
+        if self.synthetic_occupancy is None:
+            return np.empty((0, 3), dtype=float)
+        indices = np.argwhere(self.occupancy & self.synthetic_occupancy)
+        return self.origin + (indices + 0.5) * self.resolution
+
     def save(self, path: str) -> None:
+        synthetic = (
+            self.synthetic_occupancy
+            if self.synthetic_occupancy is not None
+            else np.zeros(self.shape, dtype=bool)
+        )
         np.savez_compressed(
             path, origin=self.origin, resolution=self.resolution, occupancy=np.packbits(self.occupancy),
-            shape=np.array(self.shape),
+            synthetic_occupancy=np.packbits(synthetic), shape=np.array(self.shape),
+            uncertainty=self.uncertainty,
+            provenance_json=np.array(json.dumps(self.provenance, sort_keys=True)),
         )
 
     @classmethod
@@ -139,4 +221,25 @@ class VoxelMap:
         shape = tuple(int(v) for v in data["shape"])
         count = int(np.prod(shape))
         occupancy = np.unpackbits(data["occupancy"])[:count].astype(bool).reshape(shape)
-        return cls(origin=data["origin"], resolution=float(data["resolution"]), occupancy=occupancy)
+        synthetic_occupancy = None
+        if "synthetic_occupancy" in data.files:
+            synthetic_occupancy = (
+                np.unpackbits(data["synthetic_occupancy"])[:count].astype(bool).reshape(shape)
+            )
+        uncertainty = float(data["uncertainty"]) if "uncertainty" in data.files else 0.0
+        provenance = {}
+        if "provenance_json" in data.files:
+            try:
+                provenance = json.loads(str(data["provenance_json"].item()))
+            except (AttributeError, TypeError, ValueError, json.JSONDecodeError) as error:
+                raise ValueError(f"map provenance is unreadable: {error}") from error
+            if not isinstance(provenance, dict):
+                raise ValueError("map provenance must be a JSON object")
+        return cls(
+            origin=data["origin"],
+            resolution=float(data["resolution"]),
+            occupancy=occupancy,
+            uncertainty=uncertainty,
+            synthetic_occupancy=synthetic_occupancy,
+            provenance=provenance,
+        )

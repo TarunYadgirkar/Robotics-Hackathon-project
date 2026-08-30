@@ -218,7 +218,7 @@ class YamKinematics:
     def tip_position(self, q: Sequence[float]) -> np.ndarray:
         """World position of the gripper *frame origin*.
 
-        This is not where the jaws are. It sits 147mm behind the jaw tips, so it
+        This is not where the jaws are. It sits 134mm behind the jaw tips, so it
         is the wrong point to record when someone touches an object with the
         jaws -- use `probe_position` for that.
         """
@@ -230,9 +230,9 @@ class YamKinematics:
         Measured rather than assumed: the furthest vertex of each jaw mesh,
         averaged across the two jaws so the point sits on the centreline between
         them. This is what actually contacts an object when the arm is used as a
-        probe, and it is 147mm from the frame origin -- larger than the planner's
+        probe, and it is 134mm from the frame origin -- larger than the planner's
         whole collision margin, so recording the origin instead puts every
-        enrolled obstacle 147mm out.
+        enrolled obstacle 134mm out.
         """
         if self._probe_offset is not None:
             return self._probe_offset
@@ -297,15 +297,17 @@ def numerical_jacobian(kinematics: "YamKinematics", q: np.ndarray, delta: float 
     """3x6 position Jacobian by central differences.
 
     The URDF gives joint axes, so an analytic Jacobian is available, but central
-    differences cannot disagree with `tip_position` -- and it is `tip_position`
-    that every enrolled point was measured through.
+    differences cannot disagree with the jaw-tip probe position used by
+    enrollment and Cartesian goals.
     """
     jacobian = np.zeros((3, len(q)))
     for index in range(len(q)):
         forward, backward = q.copy(), q.copy()
         forward[index] += delta
         backward[index] -= delta
-        jacobian[:, index] = (kinematics.tip_position(forward) - kinematics.tip_position(backward)) / (2 * delta)
+        jacobian[:, index] = (
+            kinematics.probe_position(forward) - kinematics.probe_position(backward)
+        ) / (2 * delta)
     return jacobian
 
 
@@ -319,7 +321,7 @@ def solve_ik(
     max_iterations: int = 200,
     damping: float = 0.05,
 ) -> Tuple[np.ndarray, float, bool]:
-    """Damped least-squares IK for tip position only, clamped to joint limits.
+    """Damped least-squares IK for jaw-tip position only, clamped to joint limits.
 
     Damping keeps the step finite near singularities, where an undamped pseudo-
     inverse asks for enormous joint velocities. Orientation is left free: this
@@ -332,7 +334,7 @@ def solve_ik(
     q = np.clip(np.asarray(seed, dtype=float), lower, upper)
 
     for _ in range(max_iterations):
-        error = target - kinematics.tip_position(q)
+        error = target - kinematics.probe_position(q)
         distance = float(np.linalg.norm(error))
         if distance < tolerance:
             return q, distance, True
@@ -343,7 +345,7 @@ def solve_ik(
         )
         q = np.clip(q + np.clip(step, -0.2, 0.2), lower, upper)
 
-    return q, float(np.linalg.norm(target - kinematics.tip_position(q))), False
+    return q, float(np.linalg.norm(target - kinematics.probe_position(q))), False
 
 
 def solve_ik_collision_free(

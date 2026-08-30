@@ -96,12 +96,12 @@ struct EnrollView: View {
         let count = state?.references?.count ?? 0
         let hasScan = !(state?.scans ?? []).isEmpty
         return Group {
-            if hasScan && count < 3 {
+            if hasScan && count < 4 {
                 HStack(spacing: 8) {
                     Image(systemName: "scope").font(.system(size: 12))
                     Text(count == 0
-                         ? "To align the scan: put the tip on a corner you can also see in the scan, tap Reference, then tap that same corner on the Scan tab. 3 needed."
-                         : "\(count) of 3 references. Tap the matching spot on the Scan tab, then set the next one.")
+                         ? "To align the scan: put the tip on a corner you can also see in the scan, tap Reference, then tap that same corner on the Scan tab. 4 spread-out points needed."
+                         : "\(count) of 4 references. Tap the matching spot on the Scan tab, then set the next one.")
                         .font(.system(size: 12))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -258,8 +258,8 @@ struct FinishedView: View {
                 row("reference points", "\(state?.referenceCount ?? 0)")
             }
 
-            if (state?.referenceCount ?? 0) < 3, !(state?.scans ?? []).isEmpty {
-                Text("The scan needs 3 reference points to be aligned to the arm. Without them it cannot be used for planning.")
+            if (state?.referenceCount ?? 0) < 4, !(state?.scans ?? []).isEmpty {
+                Text("The scan needs 4 spread-out reference points so alignment error can be checked. Without them it cannot be used for planning.")
                     .font(.system(size: 13)).foregroundStyle(Theme.red)
                     .fixedSize(horizontal: false, vertical: true)
             }

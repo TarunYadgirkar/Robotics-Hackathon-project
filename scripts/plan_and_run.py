@@ -1,125 +1,176 @@
-"""Plan a collision-free path and, optionally, fly it under guard.
+"""Plan through the safety gateway and optionally execute an approved path.
 
-Dry run by default -- it plans, verifies and reports, and does not move the arm.
-Executing requires --execute, on the principle that moving a robot should be the
-thing you asked for rather than the default.
-
-  python scripts/plan_and_run.py --map workcell_map.npz --degrees 0 60 90 0 0 0
-  python scripts/plan_and_run.py --map workcell_map.npz --tip 0.35 0.10 0.30
-  python scripts/plan_and_run.py --map workcell_map.npz --degrees ... --execute
+Dry runs produce preview-only paths. Hardware execution additionally requires a
+fresh provenance-bearing map, a raw-trace-backed calibration, and a trusted
+scene-interlock file. Any missing or failed check returns a spoken refusal and
+does not command a motor.
 """
 
 import argparse
+import json
 import math
+import sys
+from pathlib import Path
 
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from yam.arm import ARM_JOINTS, connected_arm
 from yam.environment import ArmSafetyChecker
 from yam.execution import ExecutionAborted, GuardedExecutor, GuardLimits
-from yam.kinematics import YamKinematics, solve_ik_collision_free
-from yam.planner import (PlannerConfig, PlanningError, RRTConnectPlanner, path_length,
-                         resample, verify_under_tracking_error)
+from yam.hardware_calibration import HardwareSafetyCalibration, file_sha256
+from yam.kinematics import YamKinematics
+from yam.safe_planning import (
+    MotionGoal,
+    PlanningPolicy,
+    SceneInterlock,
+    plan_on_demand,
+)
 from yam.voxel_map import VoxelMap
 
-ARM_XML = "../i2rt/i2rt/robot_models/arm/yam_pro/v1/yam_pro.xml"
 
-#: Measured resting pose, stable with the motors off.
+ARM_XML = "../i2rt/i2rt/robot_models/arm/yam_pro/v1/yam_pro.xml"
 HOME = [0.0498, -0.0002, 0.0002, -0.0906, 0.0734, 1.1706]
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--map", required=True, help="voxel map from scripts/build_map.py")
-    parser.add_argument("--degrees", type=float, nargs=6, default=None, help="goal joint angles")
-    parser.add_argument("--tip", type=float, nargs=3, default=None, help="goal tip position x y z in metres")
-    parser.add_argument("--from-home", action="store_true", help="plan from the recorded home pose, not the live arm")
-    parser.add_argument("--margin", type=float, default=0.03, help="obstacle clearance in metres")
-    parser.add_argument("--arm-xml", default=ARM_XML)
-    parser.add_argument("--execute", action="store_true", help="actually move the arm")
-    parser.add_argument("--gain-scale", type=float, default=0.5)
-    parser.add_argument("--rate", type=float, default=100.0)
-    parser.add_argument("--allow-unverified-sag", action="store_true",
-                        help="execute even if the sag check fails (you are accepting the risk)")
-    args = parser.parse_args()
+def load_scene_interlock(path: str) -> SceneInterlock:
+    data = json.loads(Path(path).read_text())
+    return SceneInterlock(
+        source=str(data["source"]),
+        observed_at_unix=float(data["observed_at_unix"]),
+        valid_for_seconds=float(data["valid_for_seconds"]),
+    )
 
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--map", required=True, help="map from scripts/build_map.py")
+    parser.add_argument("--degrees", type=float, nargs=6, help="goal joint angles")
+    parser.add_argument("--tip", type=float, nargs=3, help="jaw-tip goal x y z in metres")
+    parser.add_argument("--from-home", action="store_true", help="preview from the recorded home pose")
+    parser.add_argument("--margin", type=float, default=0.03, help="requested obstacle clearance in metres")
+    parser.add_argument("--arm-xml", default=ARM_XML)
+    parser.add_argument("--output-plan", help="save the dense path for visualization")
+    parser.add_argument("--execute", action="store_true", help="move only if the gateway issues approval")
+    parser.add_argument("--calibration", help="hardware safety calibration JSON")
+    parser.add_argument("--scene-interlock", help="fresh trusted scene-observation JSON")
+    parser.add_argument("--max-map-age", type=float, help="maximum scan age permitted by deployment policy")
+    parser.add_argument("--max-calibration-age", type=float,
+                        help="maximum calibration age permitted by deployment policy")
+    parser.add_argument("--approval-seconds", type=float,
+                        help="maximum time between planning and starting execution")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
     if (args.degrees is None) == (args.tip is None):
         raise SystemExit("give exactly one of --degrees or --tip")
+    if args.execute and args.from_home:
+        raise SystemExit("refusing to execute from a stored home pose; hardware must plan from a live read")
 
-    kinematics = YamKinematics()
-    voxel_map = VoxelMap.load(args.map)
-    checker = ArmSafetyChecker(kinematics, voxel_map, args.arm_xml, margin=args.margin)
-    lower = [j.lower_limit for j in ARM_JOINTS]
-    upper = [j.upper_limit for j in ARM_JOINTS]
-
-    print(f"  map {voxel_map.shape} @ {voxel_map.resolution * 1000:.0f}mm, "
-          f"{int(voxel_map.occupancy.sum()):,} occupied voxels")
-
-    def plan_from(start):
-        start = np.asarray(start, dtype=float)
-        if not checker.is_free(start):
-            raise SystemExit(f"  start pose is not clear: {'; '.join(checker.explain(start))}")
-
-        if args.degrees is not None:
-            goal = np.array([math.radians(d) for d in args.degrees])
-            goal = np.clip(goal, lower, upper)
-            if not checker.is_free(goal):
-                raise SystemExit(f"  goal pose is not clear: {'; '.join(checker.explain(goal))}")
-        else:
-            print(f"  solving IK for tip {args.tip}...")
-            goal = solve_ik_collision_free(kinematics, args.tip, checker, lower, upper, seed=start)
-            if goal is None:
-                raise SystemExit("  no collision-free IK solution for that point")
-            reached = kinematics.tip_position(goal)
-            print(f"    tip {np.round(reached, 4)}  (error {np.linalg.norm(reached - args.tip) * 1000:.1f} mm)")
-
-        planner = RRTConnectPlanner(checker, lower, upper, PlannerConfig(seed=1))
-        try:
-            return goal, planner.plan(start, goal)
-        except PlanningError as error:
-            raise SystemExit(f"  {error}")
-
-    def report(path):
-        dense = resample(path, 0.02)
-        clearances = [checker.clearance(q) for q in dense]
-        print(f"\n  path: {len(path)} waypoints, {path_length(path):.2f} rad of joint travel")
-        print(f"  verified {len(dense)} interpolated states, min slack {min(clearances) * 1000:+.1f} mm")
-
-        limits = GuardLimits()
-        sag = verify_under_tracking_error(checker, dense, limits.max_tracking_error, samples=12,
-                                          lower=lower, upper=upper)
-        print(f"\n  sag check at the guard's +-{sag['tracking_error_deg']:.0f}deg tracking limit: "
-              f"{sag['failures']} of {len(dense)} waypoints fail")
-        if not sag["ok"]:
-            print("    The commanded path is clear, but the arm lags behind its command under gravity,")
-            print("    and inside that lag envelope this path is not clear. Reduce the lag (higher gain,")
-            print("    slower motion) or re-plan with a larger --margin.")
-        return dense, sag
+    goal = (
+        MotionGoal.joints_degrees(args.degrees, "requested joint pose")
+        if args.degrees is not None
+        else MotionGoal.tip(args.tip, "requested jaw-tip point")
+    )
+    policy = PlanningPolicy(
+        requested_clearance_m=args.margin,
+        max_map_age_seconds=args.max_map_age,
+        max_calibration_age_seconds=args.max_calibration_age,
+        approval_valid_seconds=args.approval_seconds,
+    )
 
     if args.execute:
+        try:
+            scene_interlock = load_scene_interlock(args.scene_interlock) if args.scene_interlock else None
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            _print_refusal("scene_not_interlocked", f"the scene interlock cannot be read ({error})")
+            return
+
         with connected_arm(joints=ARM_JOINTS) as arm:
-            arm.enable()
-            start = HOME if args.from_home else arm.read_state().positions
-            goal, path = plan_from(start)
-            dense, sag = report(path)
+            start = arm.read_state().positions
 
-            if not sag["ok"] and not args.allow_unverified_sag:
-                raise SystemExit("\n  refusing to execute: sag check failed (--allow-unverified-sag to override)")
-
-            print("\n  executing under guard...")
-            executor = GuardedExecutor(arm, checker)
-            try:
-                result = executor.run(dense, rate_hz=args.rate, gain_scale=args.gain_scale)
-                print(f"  completed {result.waypoints_sent} waypoints | "
-                      f"peak tracking error {math.degrees(result.peak_tracking_error):.1f}deg | "
-                      f"peak torque {result.peak_torque:.2f}Nm | "
-                      f"peak residual {result.peak_torque_residual:.2f}Nm")
-            except ExecutionAborted as abort:
-                print(f"\n  ABORTED: {abort.reason}")
+        outcome = plan_on_demand(
+            start,
+            [goal],
+            args.map,
+            args.arm_xml,
+            policy,
+            hardware_requested=True,
+            calibration_path=args.calibration,
+            scene_interlock=scene_interlock,
+        )
     else:
-        goal, path = plan_from(HOME if args.from_home else HOME)
-        report(path)
-        print("\n  dry run only -- pass --execute to move the arm")
+        outcome = plan_on_demand(
+            HOME,
+            [goal],
+            args.map,
+            args.arm_xml,
+            policy,
+            hardware_requested=False,
+        )
+
+    print(json.dumps(outcome.to_dict(), indent=2, allow_nan=False))
+    if not outcome.decision.allowed and outcome.preview_path is None:
+        return
+
+    path = outcome.approved_plan.path if outcome.approved_plan is not None else outcome.preview_path
+    if args.output_plan:
+        np.save(args.output_plan, path)
+        print(f"saved {len(path)} poses to {args.output_plan}")
+
+    if not args.execute:
+        return
+
+    calibration = HardwareSafetyCalibration.load(
+        args.calibration,
+        max_age_seconds=args.max_calibration_age,
+    )
+    voxel_map = VoxelMap.load(args.map)
+    checker = ArmSafetyChecker(
+        YamKinematics(),
+        voxel_map,
+        args.arm_xml,
+        margin=args.margin,
+    )
+    limits = GuardLimits.from_calibration(calibration)
+
+    with connected_arm(joints=ARM_JOINTS) as arm:
+        arm.enable()
+        executor = GuardedExecutor(
+            arm,
+            checker,
+            limits,
+            map_sha256=file_sha256(args.map),
+        )
+        try:
+            result = executor.run(
+                outcome.approved_plan,
+                rate_hz=calibration.rate_hz,
+                gain_scale=calibration.gain_scale,
+            )
+        except ExecutionAborted as error:
+            print(f"ABORTED: {error.reason}")
+            return
+    print(
+        f"completed {result.waypoints_sent} poses; "
+        f"peak tracking error {math.degrees(result.peak_tracking_error):.2f}deg"
+    )
+
+
+def _print_refusal(code: str, reason: str) -> None:
+    detail = reason.strip().rstrip(".")
+    print(json.dumps({
+        "allowed": False,
+        "code": code,
+        "reason": reason,
+        "spoken_response": (
+            f"I understand the task, but I can't do it safely: {detail}. "
+            "I won't move the arm."
+        ),
+    }, indent=2))
 
 
 if __name__ == "__main__":
