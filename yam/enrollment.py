@@ -109,9 +109,20 @@ class EnrolledObject:
 
 
 @dataclass
+class PoseSample:
+    timestamp: float
+    joint_angles: List[float]
+
+
+@dataclass
 class EnrollmentSession:
     objects: List[EnrolledObject] = field(default_factory=list)
     started_at: float = field(default_factory=time.time)
+    #: Every distinct pose the arm was seen in. A phone LiDAR sweep is
+    #: continuous, so the arm appears in the scan across a whole trajectory, not
+    #: in one pose. Filtering one pose out of the cloud leaves the rest of the
+    #: sweep behind as a smear of phantom obstacles along the arm's path.
+    pose_log: List[PoseSample] = field(default_factory=list)
 
     def begin_object(self, name: str, padding: float = 0.02) -> EnrolledObject:
         obstacle = EnrolledObject(name=name, padding=padding)
@@ -134,6 +145,20 @@ class EnrollmentSession:
         self.current.points.append(point)
         return point
 
+    def log_pose(self, joint_angles: Sequence[float], min_change: float = 0.03) -> bool:
+        """Record a pose if it differs from the last logged one.
+
+        Thresholded rather than sampled on a timer: holding still for a minute
+        should cost one entry, and a fast sweep should not be undersampled.
+        """
+        angles = [float(v) for v in joint_angles]
+        if self.pose_log:
+            previous = np.asarray(self.pose_log[-1].joint_angles)
+            if np.abs(np.asarray(angles) - previous).max() < min_change:
+                return False
+        self.pose_log.append(PoseSample(timestamp=time.time(), joint_angles=angles))
+        return True
+
     def undo(self) -> bool:
         if self.current and self.current.points:
             self.current.points.pop()
@@ -141,7 +166,11 @@ class EnrollmentSession:
         return False
 
     def to_dict(self) -> Dict:
-        return {"started_at": self.started_at, "objects": [o.to_dict() for o in self.objects]}
+        return {
+            "started_at": self.started_at,
+            "objects": [o.to_dict() for o in self.objects],
+            "pose_log": [asdict(p) for p in self.pose_log],
+        }
 
     def save(self, path: str) -> None:
         with open(path, "w") as handle:
@@ -152,6 +181,7 @@ class EnrollmentSession:
         with open(path) as handle:
             data = json.load(handle)
         session = cls(started_at=data.get("started_at", time.time()))
+        session.pose_log = [PoseSample(**p) for p in data.get("pose_log", [])]
         for entry in data.get("objects", []):
             obstacle = EnrolledObject(name=entry["name"], padding=entry.get("padding", 0.02))
             obstacle.points = [CapturedPoint(**p) for p in entry["points"]]

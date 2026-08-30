@@ -55,6 +55,10 @@
   button.primary{background:var(--red);color:#fff;font-weight:600;padding:13px 30px;
                  box-shadow:0 2px 6px rgba(194,24,60,.28),0 10px 28px rgba(194,24,60,.22)}
   button.primary:hover{background:#D42149}
+  .upload{font-family:var(--sans);font-size:14px;font-weight:500;color:var(--text);background:var(--panel);
+          border-radius:999px;padding:13px 22px;cursor:pointer;display:inline-block;
+          box-shadow:0 1px 2px rgba(23,18,20,.06),0 6px 18px rgba(23,18,20,.07)}
+  .upload:hover{background:#FCFAFB}
   kbd{font-family:var(--mono);font-size:10px;color:var(--faint);background:#F4F1F2;border-radius:4px;
       padding:2px 5px;margin-left:8px}
   button.primary kbd{background:rgba(255,255,255,.22);color:#fff}
@@ -95,12 +99,15 @@
     <span>directions <b id="statPatches">0</b></span>
     <span>coverage <b id="statCoverage">0%</b></span>
     <span>tip <b id="statTip">—</b></span>
+    <span>poses logged <b id="statPoses">0</b></span>
   </div>
   <div class="controls">
     <button id="btnUndo">Undo<kbd>U</kbd></button>
     <button class="primary" id="btnCapture">Capture point<kbd>SPACE</kbd></button>
     <button id="btnNext">Next object<kbd>N</kbd></button>
     <button id="btnDone">Finish<kbd>F</kbd></button>
+    <label class="upload" for="scanFile">Upload scan</label>
+    <input id="scanFile" type="file" accept=".ply,.obj,.stl" hidden>
   </div>
 </footer>
 
@@ -135,19 +142,73 @@ grid.rotation.x = Math.PI / 2;
 world.add(grid);
 
 const linkGroups = {};
-const roseMaterial = new THREE.MeshStandardMaterial({color:0xE9A6B8, metalness:.06, roughness:.52});
-const baseMaterial = new THREE.MeshStandardMaterial({color:0xD98BA1, metalness:.10, roughness:.46});
+
+/* Holographic rather than matte: no diffuse term at all. The surface is a black
+   or white base (baked per vertex, so the white band across the middle of the
+   long links is part of the mesh rather than a separate material) lifted by a
+   fresnel-driven iridescence that only appears at grazing angles. Lambert
+   shading would read as painted plastic; this reads as a projection. */
+const holoMaterial = new THREE.ShaderMaterial({
+  transparent: true,
+  side: THREE.DoubleSide,
+  uniforms: { uTime:{value:0}, uSheen:{value:0.85} },
+  vertexShader: `
+    varying vec3 vNormalW;
+    varying vec3 vViewDir;
+    varying vec3 vBase;
+    varying vec3 vWorld;
+    void main(){
+      vBase = color;
+      vNormalW = normalize(mat3(modelMatrix) * normal);
+      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+      vWorld = worldPosition.xyz;
+      vViewDir = cameraPosition - worldPosition.xyz;
+      gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    }`,
+  fragmentShader: `
+    uniform float uTime;
+    uniform float uSheen;
+    varying vec3 vNormalW;
+    varying vec3 vViewDir;
+    varying vec3 vBase;
+    varying vec3 vWorld;
+    void main(){
+      vec3 normal = normalize(vNormalW);
+      vec3 view = normalize(vViewDir);
+      float facing = abs(dot(normal, view));
+      float fresnel = pow(1.0 - facing, 2.3);
+
+      // Cosine palette: cheap spectral sweep without a lookup texture.
+      vec3 phase = vec3(0.0, 0.33, 0.67);
+      vec3 iridescence = 0.5 + 0.5 * cos(6.28318 * (phase + fresnel * 1.35 + normal.y * 0.30 + uTime * 0.04));
+
+      // Black body or white band, baked per vertex.
+      vec3 base = mix(vec3(0.055), vec3(0.93), vBase.r);
+
+      // Faint horizontal banding, the one overt "projection" cue.
+      float scan = 0.030 * sin(vWorld.z * 190.0 - uTime * 1.1);
+
+      // Damp the additive sheen where the base is already bright: full sheen on
+      // the white bands blows them out to a glowing bar instead of white paint.
+      float sheen = uSheen * mix(1.0, 0.30, vBase.r);
+      vec3 color = base + iridescence * fresnel * sheen + scan * (1.0 - 0.6 * vBase.r);
+      float alpha = mix(0.80, 1.0, fresnel);
+      gl_FragColor = vec4(color, alpha);
+    }`,
+});
+holoMaterial.vertexColors = true;
 
 fetch('/api/static/meshes').then(r => r.json()).then(meshes => {
   for (const [name, data] of Object.entries(meshes)){
     if (!data.positions || !data.positions.length) continue;
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(data.colors || new Array(data.positions.length).fill(0), 3));
     geometry.setIndex(data.indices);
     geometry.computeVertexNormals();
     const group = new THREE.Group();
     group.matrixAutoUpdate = false;
-    group.add(new THREE.Mesh(geometry, name === 'base' ? baseMaterial : roseMaterial));
+    group.add(new THREE.Mesh(geometry, holoMaterial));
     world.add(group);
     linkGroups[name] = group;
   }
@@ -293,6 +354,7 @@ function render(state){
   el('statPoints').textContent = state.point_count ?? 0;
   el('statPatches').textContent = covered;
   el('statCoverage').textContent = Math.round((state.progress || 0) * 100) + '%';
+  el('statPoses').textContent = state.pose_samples ?? 0;
   el('meterFill').style.width = Math.round((state.progress || 0) * 100) + '%';
 
   if (state.tip){
@@ -360,6 +422,16 @@ el('btnCapture').onclick = () => send('capture');
 el('btnUndo').onclick    = () => send('undo');
 el('btnNext').onclick    = () => send('next');
 el('btnDone').onclick    = () => send('done');
+el('scanFile').addEventListener('change', async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  toast(`uploading ${file.name}…`);
+  try{
+    await fetch('/api/scan', {method:'POST', headers:{'X-Filename': file.name}, body: file});
+  }catch(e){ toast('upload failed', 'warn'); }
+  event.target.value = '';
+});
+
 addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
@@ -380,6 +452,7 @@ function tick(now){
     pulses[i].mesh.scale.setScalar(1 + 2.4 * (1-age) * (1-age));
   }
   shell.rotation.z += 0.0012;   // slow drift keeps the shell readable as a volume
+  holoMaterial.uniforms.uTime.value = now * 0.001;
 
   const cp = Math.cos(pitch), sp = Math.sin(pitch);
   camera.position.set(

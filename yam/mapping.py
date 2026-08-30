@@ -33,7 +33,7 @@ def build_map(
     bounds_min: Sequence[float] = DEFAULT_BOUNDS_MIN,
     bounds_max: Sequence[float] = DEFAULT_BOUNDS_MAX,
     kinematics=None,
-    scan_pose: Optional[Sequence[float]] = None,
+    scan_poses: Optional[Sequence[Sequence[float]]] = None,
 ) -> VoxelMap:
     voxel_map = VoxelMap.from_bounds(bounds_min, bounds_max, resolution)
 
@@ -46,17 +46,21 @@ def build_map(
 
     if scan_points is not None and len(scan_points):
         points = crop_to_workspace(np.asarray(scan_points, dtype=float))
-        if kinematics is not None and scan_pose is not None:
-            points = filter_robot_from_scan(points, kinematics, scan_pose)
+        if kinematics is not None and scan_poses is not None and len(scan_poses):
+            before = len(points)
+            points = filter_robot_from_scan(points, kinematics, scan_poses)
+            print(f"  self-filter: {before:,} -> {len(points):,} points "
+                  f"({before - len(points):,} removed as robot across {len(scan_poses)} poses)")
         voxel_map.add_points(points)
 
     # Even after point-level filtering, stray returns land on the arm: the scan
     # pose is only known to the accuracy of FK, and LiDAR noise smears surfaces.
     # Any voxel the arm provably occupies is cleared, or the arm is walled in
     # by an image of itself.
-    if kinematics is not None and scan_pose is not None:
-        centers, radii = kinematics.collision_spheres(scan_pose)
-        voxel_map.carve_spheres(centers, radii, padding=0.03)
+    if kinematics is not None and scan_poses is not None:
+        for pose in scan_poses:
+            centers, radii = kinematics.collision_spheres(pose)
+            voxel_map.carve_spheres(centers, radii, padding=0.03)
 
     voxel_map.compute_distance_field()
     return voxel_map

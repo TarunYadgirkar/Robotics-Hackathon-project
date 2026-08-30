@@ -13,7 +13,32 @@ from typing import Dict, List, Sequence
 import numpy as np
 
 
-def decimate(triangle_vertices: np.ndarray, cell_size: float = 0.008) -> Dict[str, List]:
+#: The two long segments carry a white band in the middle; everything else on
+#: this arm is black. Colour is baked per vertex because the band is part of a
+#: link, not a whole link, and a per-link material cannot express that.
+BANDED_LINKS = ("link2", "link3")
+BAND_HALF_WIDTH = 0.22   # fraction of the link's length, either side of centre
+
+
+def band_colors(points: np.ndarray, banded: bool) -> np.ndarray:
+    """Per-vertex black/white, with a white band across the middle of a long link."""
+    colors = np.zeros((len(points), 3))
+    if not banded or len(points) == 0:
+        return colors
+
+    centred = points - points.mean(axis=0)
+    _, _, principal = np.linalg.svd(centred, full_matrices=False)
+    along = centred @ principal[0]
+    span = along.max() - along.min()
+    if span < 1e-6:
+        return colors
+
+    normalized = (along - along.min()) / span - 0.5
+    colors[np.abs(normalized) < BAND_HALF_WIDTH] = 1.0
+    return colors
+
+
+def decimate(triangle_vertices: np.ndarray, cell_size: float = 0.008, banded: bool = False) -> Dict[str, List]:
     points = np.asarray(triangle_vertices, dtype=float).reshape(-1, 3)
     if len(points) == 0:
         return {"positions": [], "indices": []}
@@ -33,6 +58,7 @@ def decimate(triangle_vertices: np.ndarray, cell_size: float = 0.008) -> Dict[st
     return {
         "positions": np.round(representatives, 5).ravel().tolist(),
         "indices": faces.ravel().tolist(),
+        "colors": band_colors(representatives, banded).ravel().tolist(),
     }
 
 
@@ -67,7 +93,7 @@ def export_arm_meshes(kinematics, cell_size: float = 0.008) -> Dict[str, Dict]:
             rpy = np.fromstring(origin.get("rpy", "0 0 0"), sep=" ")
             points = points @ rpy_to_matrix(*rpy).T + xyz
 
-        meshes[name] = decimate(points, cell_size)
+        meshes[name] = decimate(points, cell_size, banded=name in BANDED_LINKS)
 
     return meshes
 

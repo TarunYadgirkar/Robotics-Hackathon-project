@@ -10,6 +10,7 @@ watching, instead of looking away to a terminal.
 import json
 import os
 import queue
+import socket
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional
@@ -20,10 +21,14 @@ WEB_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 
 
 class VizServer:
-    def __init__(self, port: int = 8420, web_root: str = WEB_ROOT):
+    def __init__(self, port: int = 8420, web_root: str = WEB_ROOT, host: str = "0.0.0.0",
+                 upload_dir: Optional[str] = None):
         self.port = port
+        self.host = host
         self.web_root = web_root
+        self.upload_dir = upload_dir or os.getcwd()
         self.static_payloads: Dict[str, Any] = {}
+        self.uploads: list = []
         self._state: Dict[str, Any] = {"status": "starting"}
         self._lock = threading.Lock()
         self.commands: "queue.Queue[str]" = queue.Queue()
@@ -37,6 +42,31 @@ class VizServer:
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
             return dict(self._state)
+
+    @staticmethod
+    def lan_address() -> Optional[str]:
+        """This machine's address on the local network.
+
+        Opening a UDP socket toward a public address makes the OS choose the
+        outbound interface; no packet is actually sent. `gethostname()` is
+        unreliable here -- on macOS it often resolves to a .local name the phone
+        cannot look up.
+        """
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(("8.8.8.8", 80))
+            return probe.getsockname()[0]
+        except OSError:
+            return None
+        finally:
+            probe.close()
+
+    def urls(self) -> Dict[str, Optional[str]]:
+        address = self.lan_address()
+        return {
+            "local": f"http://127.0.0.1:{self.port}/",
+            "lan": f"http://{address}:{self.port}/" if address and self.host != "127.0.0.1" else None,
+        }
 
     def start(self) -> str:
         server = self
@@ -74,6 +104,9 @@ class VizServer:
                 super().do_GET()
 
             def do_POST(self):
+                if self.path.startswith("/api/scan"):
+                    self._receive_scan()
+                    return
                 if self.path != "/api/command":
                     self._send_json({"error": "unknown endpoint"}, 404)
                     return
@@ -88,7 +121,29 @@ class VizServer:
                     server.commands.put(action)
                 self._send_json({"accepted": bool(action)})
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
+            def _receive_scan(self):
+                """Accept a scan file uploaded from the phone that captured it."""
+                name = os.path.basename(self.headers.get("X-Filename", "scan.ply")) or "scan.ply"
+                length = int(self.headers.get("Content-Length", 0))
+                if length <= 0:
+                    self._send_json({"error": "empty upload"}, 400)
+                    return
+
+                destination = os.path.join(server.upload_dir, name)
+                remaining = length
+                with open(destination, "wb") as handle:
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(1 << 20, remaining))
+                        if not chunk:
+                            break
+                        handle.write(chunk)
+                        remaining -= len(chunk)
+
+                server.uploads.append(destination)
+                server.commands.put("scan_uploaded")
+                self._send_json({"saved": destination, "bytes": length - remaining})
+
+        self._server = ThreadingHTTPServer((self.host, self.port), Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
         return f"http://127.0.0.1:{self.port}/"

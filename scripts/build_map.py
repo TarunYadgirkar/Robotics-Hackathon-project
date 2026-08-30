@@ -33,7 +33,6 @@ def main() -> None:
     session = EnrollmentSession.load(args.enrollment) if args.enrollment else None
 
     points = None
-    scan_pose = None
     if args.scan:
         points = load_point_cloud(args.scan)
         print(f"  loaded {len(points):,} points from {args.scan}")
@@ -51,14 +50,21 @@ def main() -> None:
         else:
             print("  NOTE: no --registration given, so the scan is assumed to already be in the base frame")
 
-    if session and session.objects and session.objects[0].points:
-        scan_pose = session.objects[0].points[-1].joint_angles
+    # Every pose the arm was logged in during enrollment, so a continuous sweep
+    # can have the arm subtracted along its whole trajectory rather than at one
+    # instant. Falls back to the touched poses for sessions recorded before
+    # pose logging existed.
+    scan_poses = [sample.joint_angles for sample in session.pose_log] if session else []
+    if session and not scan_poses:
+        scan_poses = [p.joint_angles for obstacle in session.objects for p in obstacle.points]
+    if scan_poses:
+        print(f"  {len(scan_poses)} arm poses available for scan subtraction")
 
     table = table_slab(args.table_z, args.table_edge) if args.table_z is not None else None
 
     voxel_map = build_map(
         session=session, scan_points=points, table=table, resolution=args.resolution,
-        kinematics=kinematics, scan_pose=scan_pose,
+        kinematics=kinematics, scan_poses=scan_poses,
     )
     voxel_map.save(args.output)
 

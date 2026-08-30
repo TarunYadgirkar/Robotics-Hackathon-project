@@ -121,21 +121,28 @@ def kabsch(source: np.ndarray, target: np.ndarray) -> Registration:
     return Registration(rotation, translation, float(np.sqrt((residuals ** 2).mean())), residuals)
 
 
-def filter_robot_from_scan(points: np.ndarray, kinematics, q: Sequence[float], padding: float = 0.03) -> np.ndarray:
-    """Drop scan points that are the robot itself.
+def filter_robot_from_scan(points: np.ndarray, kinematics, poses, padding: float = 0.03) -> np.ndarray:
+    """Drop scan points that are the robot itself, across every pose it was seen in.
 
     A sweep of the workcell inevitably includes the arm. Left in, the arm becomes
     a permanent obstacle sitting exactly where it has to move, and the planner
     can never leave the pose it was scanned in.
+
+    `poses` is a sequence of joint vectors, not one pose: a phone sweep takes
+    tens of seconds, and anything holding the arm during it drags the arm
+    through many configurations. Filtering only the final pose leaves the rest
+    of the trajectory in the map as a smear of phantom obstacles.
     """
     points = np.asarray(points, dtype=float).reshape(-1, 3)
-    centers, radii = kinematics.collision_spheres(q)
-    if len(centers) == 0:
-        return points
+    poses = np.atleast_2d(np.asarray(poses, dtype=float))
 
     keep = np.ones(len(points), dtype=bool)
-    for center, radius in zip(centers, radii):
-        keep &= np.linalg.norm(points - center, axis=1) > (radius + padding)
+    for pose in poses:
+        centers, radii = kinematics.collision_spheres(pose)
+        for center, radius in zip(centers, radii):
+            keep &= np.linalg.norm(points - center, axis=1) > (radius + padding)
+        if not keep.any():
+            break
     return points[keep]
 
 

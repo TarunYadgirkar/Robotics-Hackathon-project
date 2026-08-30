@@ -11,6 +11,7 @@ The viewer opens at http://127.0.0.1:8420/.
 """
 
 import argparse
+import os
 import sys
 import threading
 import time
@@ -57,6 +58,9 @@ def main() -> None:
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--padding", type=float, default=0.02, help="metres of margin added around touched points")
     parser.add_argument("--port", type=int, default=8420)
+    parser.add_argument("--host", default="0.0.0.0",
+                        help="0.0.0.0 lets the phone that does the LiDAR scan open the viewer; "
+                             "use 127.0.0.1 to keep it on this machine only")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--validate-fk", action="store_true",
                         help="touch one fixed point repeatedly and report the spread")
@@ -68,14 +72,19 @@ def main() -> None:
     session = EnrollmentSession()
     session.begin_object(args.object, padding=args.padding)
 
-    server = VizServer(port=args.port)
+    server = VizServer(port=args.port, host=args.host)
     server.static_payloads["meshes"] = export_arm_meshes(kinematics)
     url = server.start()
+    addresses = server.urls()
 
-    print(f"\n  Viewer: {url}")
-    print("  The arm is limp -- support it. Space/Enter captures, U undoes, N next object, F finishes.\n")
+    print(f"\n  Viewer:      {addresses['local']}")
+    if addresses["lan"]:
+        print(f"  From phone:  {addresses['lan']}   (same wifi; anyone on this network can reach it)")
+    print("  The arm is limp -- support it. Space/Enter captures, U undoes, N next object, F finishes.")
+    print("  Scanning with a phone? Keep this running: the arm's pose is logged throughout,")
+    print("  so it can be subtracted from the sweep afterwards.\n")
     if not args.no_browser:
-        webbrowser.open(url)
+        webbrowser.open(addresses["local"])
 
     threading.Thread(target=read_terminal_lines, args=(server.commands.put,), daemon=True).start()
 
@@ -120,9 +129,13 @@ def main() -> None:
                 elif command == "next":
                     session.begin_object(f"object_{len(session.objects) + 1}", padding=args.padding)
                     message, message_kind = f"started {session.current.name}", ""
+                elif command == "scan_uploaded":
+                    message, message_kind = f"scan received: {os.path.basename(server.uploads[-1])}", ""
                 elif command in ("done", "finish", "quit"):
                     finished = True
                     continue
+
+                session.log_pose(q)
 
                 obstacle = session.current
                 bounds = obstacle.bounds()
@@ -144,6 +157,8 @@ def main() -> None:
                     "temperature": None if state is None else max(
                         max(f.temperature_mos, f.temperature_rotor) for f in state.feedback
                     ),
+                    "pose_samples": len(session.pose_log),
+                    "scans": [os.path.basename(path) for path in server.uploads],
                     "message": message,
                     "message_kind": message_kind,
                 })
@@ -167,7 +182,7 @@ def main() -> None:
     session.save(args.output)
     server.update({**server.snapshot(), "status": "finished"})
 
-    print(f"\n  saved {args.output}")
+    print(f"\n  saved {args.output}  ({len(session.pose_log)} arm poses logged for scan subtraction)")
     for obstacle in session.objects:
         bounds = obstacle.bounds()
         if bounds is None:
