@@ -1,7 +1,10 @@
 # The Hands Index
 
 An actionable explorer over 35 hours of industrial egocentric video, built for the
-Berkeley Robotics Hackathon visualization track.
+Berkeley Robotics Hackathon visualization track. Live at https://hands-index.vercel.app
+
+> This is the `hands-index` branch. The repo is shared with a teammate's YAM arm-control
+> project, which lives on `main`; `yam/`, `scripts/` and `web/enroll/` here are theirs.
 
 **The claim:** most of a demonstration corpus is not demonstration. We track both hands
 across every clip, collapse each second into one of four states, and show what fraction of

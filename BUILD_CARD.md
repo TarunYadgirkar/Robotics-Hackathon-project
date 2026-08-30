@@ -122,9 +122,13 @@ arm64 with a Metal service error, and will not install on Python 3.14. We pin 0.
 
 ## Note on this repository
 
-The repo is shared with a teammate's separate project. **The Hands Index is
-`pipeline/`, `web/`, `assets/`, and the markdown files at the root.** The `yam/` and
-`scripts/` directories are their YAM arm-control work and are not part of this submission.
+The repo is shared with a teammate's separate project, so **The Hands Index lives on the
+`hands-index` branch** — that is the branch to review:
+https://github.com/TarunYadgirkar/Robotics-Hackathon-project/tree/hands-index
+
+On that branch, this submission is `pipeline/`, `web/`, `assets/` and the root markdown.
+`yam/`, `scripts/` and `web/enroll/` are the teammate's YAM arm-control work, carried along
+by shared history and not part of this submission. `main` holds their work only.
 
 ## Reproduction facts
 
