@@ -44,9 +44,12 @@ final class ServerClient: ObservableObject {
             state = try await fetchState()
             isConnected = true
             startPolling()
+        } catch let error as ClientError {
+            isConnected = false
+            lastError = error.errorDescription
         } catch {
             isConnected = false
-            lastError = "Could not reach \(url.host ?? "the server"): \(error.localizedDescription)"
+            lastError = "Could not reach \(url.host ?? "the server"). \(error.localizedDescription)"
         }
     }
 
@@ -89,9 +92,36 @@ final class ServerClient: ObservableObject {
 
     func fetchState() async throws -> EnrollmentState {
         guard let request = request("/api/state") else { throw ClientError.notConfigured }
-        let (data, _) = try await session.data(for: request)
-        return try JSONDecoder().decode(EnrollmentState.self, from: data)
+        let (data, response) = try await session.data(for: request)
+        try Self.check(response, data: data)
+        do {
+            return try JSONDecoder().decode(EnrollmentState.self, from: data)
+        } catch {
+            throw ClientError.notTheServer
+        }
     }
+
+    /// Turn transport-level failures into something the operator can act on.
+    ///
+    /// A dead tunnel answers with a Cloudflare error *page*, so the raw failure
+    /// surfaces as a JSON decoding error -- "the data couldn't be read because
+    /// it isn't in the correct format" -- which says nothing about the actual
+    /// problem, that the link is stale.
+    static func check(_ response: URLResponse, data: Data) throws {
+        guard let http = response as? HTTPURLResponse else { return }
+        switch http.statusCode {
+        case 200..<300:
+            return
+        case 401:
+            throw ClientError.badToken
+        case 502, 503, 530:
+            throw ClientError.tunnelDown
+        default:
+            throw ClientError.httpStatus(http.statusCode)
+        }
+    }
+
+    enum ClientErrorKind { case configuration, token, tunnel, format }
 
     @discardableResult
     func send(command: String) async -> Bool {
@@ -105,8 +135,9 @@ final class ServerClient: ObservableObject {
         guard var request = request("/api/scan", method: "POST") else { throw ClientError.notConfigured }
         request.setValue(name, forHTTPHeaderField: "X-Filename")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        let (response, _) = try await session.upload(for: request, from: data)
-        return try JSONDecoder().decode(ScanSummary.self, from: response)
+        let (body, response) = try await session.upload(for: request, from: data)
+        try Self.check(response, data: body)
+        return try JSONDecoder().decode(ScanSummary.self, from: body)
     }
 
     func register(scanPoints: [[Double]], robotPoints: [[Double]]) async throws -> Registration {
@@ -115,13 +146,32 @@ final class ServerClient: ObservableObject {
         request.httpBody = try JSONSerialization.data(
             withJSONObject: ["scan": scanPoints, "robot": robotPoints]
         )
-        let (data, _) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
+        try Self.check(response, data: data)
         return try JSONDecoder().decode(Registration.self, from: data)
     }
 
     enum ClientError: LocalizedError {
         case notConfigured
-        var errorDescription: String? { "Not connected to a server yet." }
+        case badToken
+        case tunnelDown
+        case notTheServer
+        case httpStatus(Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .notConfigured:
+                return "Not connected to a server yet."
+            case .badToken:
+                return "The server rejected that token. Copy the whole link again -- a new one is issued every time the server restarts."
+            case .tunnelDown:
+                return "That tunnel is no longer running. Restarting the server on the laptop mints a new link; copy the latest one."
+            case .notTheServer:
+                return "Reached something that is not the enrollment server. Check the link is the one the laptop printed."
+            case .httpStatus(let code):
+                return "The server answered with HTTP \(code)."
+            }
+        }
     }
 }
 
