@@ -39,6 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-url", required=True)
     parser.add_argument("--source-start-seconds", type=float, default=0.0)
     parser.add_argument("--sample-fps", type=float, default=3.0)
+    parser.add_argument("--duration-seconds", type=float)
     parser.add_argument("--depth-model", default="depth-anything/Depth-Anything-V2-Small-hf")
     return parser.parse_args()
 
@@ -96,7 +97,8 @@ def extract_hands(args: argparse.Namespace) -> tuple[dict, np.ndarray, dict]:
         raise RuntimeError(f"Could not open {args.input}")
     metadata = video_metadata(capture)
     source_fps = float(metadata["fps"])
-    frame_step = max(1, round(source_fps / args.sample_fps))
+    sample_interval = 1.0 / args.sample_fps
+    next_sample_seconds = 0.0
     options = vision.HandLandmarkerOptions(
         base_options=python.BaseOptions(
             model_asset_path=str(args.hand_model),
@@ -118,10 +120,15 @@ def extract_hands(args: argparse.Namespace) -> tuple[dict, np.ndarray, dict]:
             ok, frame = capture.read()
             if not ok:
                 break
-            if frame_index % frame_step:
+            local_seconds = frame_index / source_fps
+            if getattr(args, "duration_seconds", None) is not None and local_seconds >= args.duration_seconds:
+                break
+            if local_seconds + (0.5 / source_fps) < next_sample_seconds:
                 frame_index += 1
                 continue
-            local_seconds = frame_index / source_fps
+            next_sample_seconds += sample_interval
+            while next_sample_seconds <= local_seconds:
+                next_sample_seconds += sample_interval
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
             result = landmarker.detect_for_video(image, int(local_seconds * 1000))

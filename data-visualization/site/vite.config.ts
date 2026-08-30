@@ -49,10 +49,15 @@ export default defineConfig(async () => {
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),
       proxy: {
-        "/video-stream/sample.mp4": {
+        "/pipeline-api": {
+          target: "http://127.0.0.1:8788",
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/pipeline-api/, ""),
+        },
+        "/s3-derived": {
           target: "https://d1dw8nl6ynliwf.cloudfront.net",
           changeOrigin: true,
-          rewrite: () => "/videos/axle-shaft-cutting/clip_322c7pdpympec.mp4",
+          rewrite: (path) => path.replace(/^\/s3-derived/, "/derived/clip_322c7pdpympec"),
         },
       },
     },

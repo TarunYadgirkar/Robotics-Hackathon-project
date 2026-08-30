@@ -20,6 +20,20 @@ Do not begin dynamic or 4D hand reconstruction until the static environment pipe
 - Track processing coverage and status for every source video, including accepted, needs-review, rejected, failed, and not-yet-processed states.
 - When a source video changes, use its S3 object key, version ID when available, and ETag to determine which derived artifacts need to be regenerated.
 
+### Local administrative upload pipeline
+
+The local exploration site also provides a drag-and-drop administrative ingestion path. An uploaded video must be stored in the configured S3 bucket before derived artifacts are published. The queued local worker must then reproduce the sample workflow for the entire uploaded video:
+
+- preserve the source duration, dimensions, and frame rate in the browser video;
+- run full-length hand detection, motion-based hand identity tracking, and short-gap interpolation;
+- run WiLoR MANO inference for the full video at the video's actual frame rate;
+- render the WiLoR overlay at the same duration and frame rate as the source;
+- generate the interactive MANO data, relative-depth 3D video surface, and full-length depth heat-map video;
+- upload every final artifact and manifest under a unique `derived/{video_id}/` S3 prefix;
+- expose queued, active, completed, and failed stage status in the local site.
+
+This upload control is an administrative addition; the existing S3 catalog remains the primary dataset.
+
 ---
 
 ## 1. Product objective

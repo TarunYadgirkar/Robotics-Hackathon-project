@@ -14,6 +14,9 @@ type SceneData = {
 
 const SAMPLE_START = 145;
 const SAMPLE_END = 165;
+const ASSET_BASE = "https://d1dw8nl6ynliwf.cloudfront.net/derived/clip_322c7pdpympec";
+const DATA_BASE = import.meta.env.DEV ? "/s3-derived" : ASSET_BASE;
+const SOURCE_VIDEO = `${DATA_BASE}/video-18fps-5min.mp4?v=surface-2`;
 const GRID_STRIDE = 5;
 
 function formatTime(seconds: number) {
@@ -25,9 +28,10 @@ export function PointCloudViewer() {
   const hostRef = useRef<HTMLDivElement>(null);
   const resetRef = useRef<(() => void) | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [status, setStatus] = useState("Building live depth surface…");
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(SAMPLE_START);
+  const [playbackError, setPlaybackError] = useState(false);
+  const [surfaceStatus, setSurfaceStatus] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     const host = hostRef.current;
@@ -53,12 +57,15 @@ export function PointCloudViewer() {
     controls.maxPolarAngle = Math.PI * 0.82;
 
     const video = document.createElement("video");
-    video.src = `/video-stream/sample.mp4#t=${SAMPLE_START}`;
+    if (!import.meta.env.DEV) video.crossOrigin = "anonymous";
+    video.src = `${SOURCE_VIDEO}#t=${SAMPLE_START}`;
     video.preload = "auto";
     video.muted = true;
     video.loop = false;
     video.playsInline = true;
-    video.crossOrigin = "anonymous";
+    video.className = "cloud-video-source";
+    video.setAttribute("aria-hidden", "true");
+    host.appendChild(video);
     videoRef.current = video;
 
     const handleMetadata = () => {
@@ -94,7 +101,7 @@ export function PointCloudViewer() {
 
     let surface: THREE.Mesh | null = null;
     let disposed = false;
-    fetch("/data/clip_322c7pdpympec/scene.json")
+    fetch(`${DATA_BASE}/scene.json`)
       .then((response) => {
         if (!response.ok) throw new Error("Scene artifact was not found");
         return response.json() as Promise<SceneData>;
@@ -105,9 +112,11 @@ export function PointCloudViewer() {
         const rows = Math.ceil(data.source_size.height / GRID_STRIDE);
         const positions = new Float32Array(data.points.length * 3);
         const uvs = new Float32Array(data.points.length * 2);
+        const colors = new Float32Array(data.points.length * 3);
 
         data.points.forEach((point, index) => {
           positions.set(point.slice(0, 3), index * 3);
+          colors.set([point[3] / 255, point[4] / 255, point[5] / 255], index * 3);
           const row = Math.floor(index / columns);
           const column = index % columns;
           uvs.set([column / (columns - 1), 1 - row / (rows - 1)], index * 2);
@@ -132,20 +141,33 @@ export function PointCloudViewer() {
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+        geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
         geometry.computeBoundingSphere();
 
         const material = new THREE.MeshBasicMaterial({
-          map: videoTexture,
+          map: video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA ? videoTexture : null,
+          vertexColors: video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA,
           side: THREE.DoubleSide,
           toneMapped: false,
         });
         surface = new THREE.Mesh(geometry, material);
         scene.add(surface);
-        setStatus(`${data.point_count.toLocaleString()} depth vertices · live video surface`);
+        const applyVideoTexture = () => {
+          if (!surface) return;
+          const surfaceMaterial = surface.material as THREE.MeshBasicMaterial;
+          surfaceMaterial.map = videoTexture;
+          surfaceMaterial.vertexColors = false;
+          surfaceMaterial.needsUpdate = true;
+          videoTexture.needsUpdate = true;
+        };
+        video.addEventListener("loadeddata", applyVideoTexture);
+        video.addEventListener("seeked", applyVideoTexture);
+        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) applyVideoTexture();
+        setSurfaceStatus("ready");
       })
-      .catch((error: Error) => setStatus(error.message));
+      .catch(() => setSurfaceStatus("error"));
 
     const resize = () => {
       const { clientWidth, clientHeight } = host;
@@ -178,6 +200,7 @@ export function PointCloudViewer() {
       video.removeEventListener("timeupdate", handleTimeUpdate);
       video.removeEventListener("play", handlePlay);
       video.removeEventListener("pause", handlePause);
+      video.remove();
       videoRef.current = null;
       surface?.geometry.dispose();
       if (surface) (surface.material as THREE.Material).dispose();
@@ -192,7 +215,13 @@ export function PointCloudViewer() {
     if (!video) return;
     if (video.paused) {
       if (video.currentTime < SAMPLE_START || video.currentTime >= SAMPLE_END) video.currentTime = SAMPLE_START;
-      await video.play();
+      try {
+        await video.play();
+        setPlaybackError(false);
+      } catch {
+        setPlaying(false);
+        setPlaybackError(true);
+      }
     } else {
       video.pause();
     }
@@ -201,17 +230,19 @@ export function PointCloudViewer() {
   return (
     <div className="cloud-shell">
       <div className="cloud-stage" ref={hostRef} aria-label="Interactive depth-shaped video reconstruction" />
+      {surfaceStatus !== "ready" && (
+        <div className={`cloud-surface-status ${surfaceStatus}`} role="status">
+          {surfaceStatus === "loading" ? "Loading 3D video surface…" : "3D surface data could not be loaded"}
+        </div>
+      )}
       <div className="fog-vignette" aria-hidden="true" />
       <div className="fog-bank fog-bank-left" aria-hidden="true" />
       <div className="fog-bank fog-bank-right" aria-hidden="true" />
-      <div className="cloud-hud">
-        <span className="live-dot" />
-        {status}
-      </div>
       <button className="spatial-play" onClick={togglePlayback} aria-label={playing ? "Pause video in 3D" : "Play video in 3D"}>
         {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
         {playing ? "Pause 3D video" : "Play in 3D"}
       </button>
+      {playbackError && <div className="spatial-playback-error" role="status">Video is still loading. Try play again.</div>}
       <div className="spatial-time">{formatTime(currentTime)} — {formatTime(SAMPLE_END)}</div>
       <div className="axis-key" aria-hidden="true">
         <span className="axis-x">X</span><span className="axis-y">Y</span><span className="axis-z">Z</span>
@@ -219,7 +250,6 @@ export function PointCloudViewer() {
       <button className="reset-view" onClick={() => resetRef.current?.()} aria-label="Reset 3D camera">
         <RotateCcw size={15} /> Reset view
       </button>
-      <div className="unknown-space"><span /> Black fog marks unobserved space</div>
       <div className="drag-hint">Drag to orbit · Scroll to move through depth</div>
     </div>
   );
