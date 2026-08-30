@@ -77,6 +77,11 @@ def main() -> None:
                         help="drive the viewer from a synthetic pose, with no arm connected")
     args = parser.parse_args()
 
+    started_at = time.time()
+
+    def elapsed() -> str:
+        return f"[{time.time() - started_at:5.1f}s]"
+
     kinematics = YamKinematics()
     session = EnrollmentSession()
     session.begin_object(args.object, padding=args.padding)
@@ -103,7 +108,7 @@ def main() -> None:
     url = server.start()
     addresses = server.urls()
 
-    print(f"\n  Viewer:      {addresses['local']}")
+    print(f"\n  {elapsed()} Viewer:      {addresses['local']}")
     if args.tunnel:
         # In a thread: bringing the tunnel up takes ~20s, and motors left without
         # a command stream for that long latch a comms timeout before enrollment
@@ -111,7 +116,7 @@ def main() -> None:
         def announce_tunnel():
             public = server.start_tunnel()
             if public:
-                print(f"\n  From phone:  {public}/?k={server.token}")
+                print(f"\n  {elapsed()} From phone:  {public}/?k={server.token}")
                 print("               Public URL -- the API is token-guarded, so use the whole link.\n", flush=True)
             else:
                 print("\n  Tunnel failed to start (is cloudflared installed?).\n", flush=True)
@@ -150,10 +155,13 @@ def main() -> None:
                 # enabled without a command stream, and read_state() refuses to
                 # run against a latched motor. Clear that one code, report the
                 # rest, and carry on.
+                connect_started = time.time()
                 stale = arm.recover_stale_motors()
                 if stale:
                     print(f"  cleared comms-timeout latch on: {', '.join(stale)}")
                 arm.enable()
+                print(f"  {elapsed()} arm ready "
+                      f"({time.time() - connect_started:.1f}s to clear and enable 6 motors)", flush=True)
             started = time.time()
 
             while not finished:
