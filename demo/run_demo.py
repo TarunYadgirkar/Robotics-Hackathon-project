@@ -1005,6 +1005,107 @@ def can_beat(st, transcript, label="can"):
     return True
 
 
+# ------------------------------------------------------------------- flip beat
+
+PICKUP_WORDS = {"pick", "pickup", "grab", "lift", "take", "hold"}
+FLIP_WORDS = {"flip", "toss", "throw", "spin", "flick"}
+RELEASE_TOP = {"top", "up", "upward", "upwards", "above", "high", "apex"}
+FLIP_STEER = (
+    "You are physically holding a can and were just told to flip it. You do not know how "
+    "to flip anything — say you don't know how to do that, and end by asking how to do it. "
+    "Do not claim you know how."
+)
+
+
+def say_line(st, text, label):
+    """A fixed line through speak.py --say — same voice, no decision JSON."""
+    cmd = [PY, str(REPO_ROOT / "voice" / "speak.py"), "--say", text]
+    if st.no_audio:
+        cmd.append("--no-audio")
+    out = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
+    spoken = out.stdout.strip() or text
+    say(f"{BOLD}  SPOKEN [fixed]: {spoken}{OFF}")
+    st.log(f"{label} spoken [fixed]: {spoken!r}")
+    st.history.append({"role": "robot", "text": spoken})
+
+
+def flip_beat(st, transcript, label="flip"):
+    """Pick the can up FOR REAL (can_pickup grips at 17 N and holds), get told to
+    flip, honestly abstain — 'flip' matches zero of the 50 task names — then take
+    'hold it at the top' as the instruction and run can_fling: release on the way
+    up. The can not landing is the expected, disclosed outcome. Keywords pick
+    every motion; the LLM only words the computed decisions."""
+    banner("FLIP BEAT — a real grip, an honest refusal, a release on the way up", CYAN)
+    decide(st, transcript, label)
+
+    say_line(st, "Picking it up. Center the can under the jaws while I hover.",
+             f"{label}-pickup")
+    name, secs, traj, fb = _gesture(st, "can_pickup", "approach_can", 14.0)
+    arm_motion(st, "replay", name, secs, path=traj)
+    if fb:
+        say(f"{YEL}  NOTE: can_pickup.json missing — approach_can pantomime ran instead; "
+            f"nothing is actually held.{OFF}")
+
+    heard = None
+    for attempt in range(2):
+        ans = capture_query(st, "flip", f"{label}-cmd{attempt or ''}", seconds=6) or ""
+        if _tokens(ans) & FLIP_WORDS:
+            heard = ans
+            break
+        if attempt == 0:
+            say_line(st, "I am holding the can. What should I do with it?", f"{label}-reask")
+    if heard is None:
+        heard = "flip"
+        say(f"{YEL}  no flip-word heard after 2 tries — proceeding with the golden line "
+            f"and saying so is on you{OFF}")
+
+    got = decide(st, heard, f"{label}-flip")
+    if got is not None:
+        path, _dec = got
+        speak(st, path, f"{label}-flip", template="abstain_howto",
+              allow_llm=True, steer=FLIP_STEER)
+        panel(st, path, f"{label}-flip")
+    else:
+        path = _not_understood_decision()
+        say_line(st, "I don't know how to do that. How do I do it?", f"{label}-flip")
+
+    answer = ""
+    go = False
+    for attempt in range(2):
+        answer = capture_query(st, "hold it at the top", f"{label}-how{attempt or ''}",
+                               seconds=6) or ""
+        toks = _tokens(answer)
+        if toks & RELEASE_TOP:
+            go = True
+            break
+        if toks & NEGATIVE and "hold" not in toks:
+            say(f"{GRN}  human said stop — keeping the can held, not flinging{OFF}")
+            st.log(f"{label}: human declined the fling; arm keeps holding")
+            say_line(st, "Holding. Say the word when you want it back.", f"{label}-stop")
+            return True
+        if attempt == 0:
+            say_line(st, "Tell me where to hold it.", f"{label}-how-reask")
+    if not go:
+        say(f"{YEL}  no 'top' keyword after 2 tries — defaulting to the release, per plan{OFF}")
+        st.log(f"{label}: release defaulted after 2 unrecognized answers")
+
+    say_line(st, "Hold it at the top and let go on the way up. If it does not land, "
+                 "that is the data.", f"{label}-ack")
+    fname, fsecs, ftraj, ffb = _gesture(st, "can_fling", "attempt", 10.0)
+    arm_motion(st, "replay", fname, fsecs, path=ftraj)
+    if ffb:
+        say(f"{YEL}  NOTE: can_fling.json missing — 'attempt' ran instead.{OFF}")
+
+    slots = _instruction_slots(answer or "hold it at the top")
+    closed = _augment_decision(path, slots, f"{label}-close")
+    say(f"{DIM}  computed from the instruction: {json.dumps(slots)}{OFF}")
+    speak(st, closed, f"{label}-close", template="attempt_result")
+    say(f"{DIM}  Say out loud: it was told, not shown. The fling is capped at the same "
+        f"joint speed limit as every other motion — whether the can lands is physics, "
+        f"not a claim.{OFF}")
+    return True
+
+
 # ------------------------------------------------------------- scripted backup
 
 SCRIPTED_STEPS = [
@@ -1142,6 +1243,8 @@ def respond_to(st, transcript, label):
     # down" legitimately scores 0.0 (every content word is unknown), which is the
     # honest result but would otherwise be swallowed as noise.
     if mentions_can(transcript):
+        if _tokens(transcript) & PICKUP_WORDS:
+            return flip_beat(st, transcript, label)
         return can_beat(st, transcript, label)
 
     got = decide(st, transcript, label)
@@ -1245,6 +1348,9 @@ def main():
                     help="force fixed templates; never call voice/llm_phrase.py")
     ap.add_argument("--converse", action="store_true",
                     help="go straight into free conversation instead of the scripted beats")
+    ap.add_argument("--flip", action="store_true",
+                    help="go straight into the flip beat: real can pickup -> told 'flip' -> "
+                         "honest abstain -> 'hold it at the top' -> release on the way up")
     ap.add_argument("--sim-arm", action="store_true",
                     help="print what the arm would do instead of commanding it "
                          "(auto-enabled by --rehearse when the backend is real hardware)")
@@ -1290,6 +1396,8 @@ def main():
 
         if args.scripted:
             scripted_backup(st)
+        elif args.flip:
+            flip_beat(st, "pick up the can")
         elif args.converse:
             converse(st)
         elif args.beats:

@@ -101,10 +101,21 @@ def main() -> int:
           f"clamp clearance {rest_clamp_clearance * 1000:+.0f} mm "
           f"(negative is the coarse sphere fit, not a real collision — see module docstring)\n")
 
+    # Gestures that play from another gesture's END pose, not from rest — a
+    # from-rest resolve is not just the wrong geometry, it violates soft limits
+    # (can_fling ends 30 deg of joint2 below where it starts, by design).
+    follows = {"can_fling": "can_pickup"}
+
     failures = 0
     for name in (*arm_io.GESTURE_NAMES, "task_demo"):
+        base = rest
+        if name in follows:
+            pred = motion.load_trajectory(arm_io.GESTURE_DIR / f"{follows[name]}.json")
+            end = motion.resolve_relative(pred, rest).waypoints[-1]
+            base = end.positions
+            print(f"      ({name} verified from {follows[name]}'s end pose, not rest)")
         traj = motion.load_trajectory(arm_io.GESTURE_DIR / f"{name}.json")
-        resolved = motion.resolve_relative(traj, rest) if traj.is_relative else traj
+        resolved = motion.resolve_relative(traj, base) if traj.is_relative else traj
         qs = [[math.radians(v) for v in w.positions[:6]] for w in resolved.waypoints]
 
         self_bad = []

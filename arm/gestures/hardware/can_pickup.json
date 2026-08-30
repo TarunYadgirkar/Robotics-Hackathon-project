@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "name": "can_pickup",
+  "source": "hardware-authored (relative, whole-arm, joint1 locked)",
+  "frame": "relative",
+  "notes": "REAL pickup, unlike can_grip_top's pantomime. Same URDF-verified approach path (reach, hover, descend to the rim pose), but the jaws close to 84% ABSOLUTE = 63.8 mm, which is NARROWER than the 66 mm can: the gripper stalls on the can body at the demo's lowered 0.25 Nm (~17 N) torque ceiling, so this is a true friction grip that cannot dent an empty can. A 2.5 s hold at the hover waypoint gives the operator time to center the can under the open jaws. After the grip settles, the arm lifts back to the hover offsets WITH the can and ENDS THERE — the final waypoint is the carrying pose, and hwsupport/keepalive.py holds it (including gripper torque) between motions, so the arm keeps holding the can through the following conversation until can_fling runs. JOINT1 ZERO IN EVERY WAYPOINT (base clamped). Peak joint speed 10 deg/s; jaw speed 9.3 %/s. Excursions from motion start: j2 30 (budget 35), j3 8 (60), j4 15 (55).",
+  "joint_names": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "gripper"
+  ],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {
+      "t": 0.0,
+      "positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 88.0],
+      "label": "resting pose"
+    },
+    {
+      "t": 3.0,
+      "positions": [0.0, 15.0, 4.0, 8.0, 0.0, 0.0, 98.0],
+      "label": "open the jaws, start the reach"
+    },
+    {
+      "t": 4.5,
+      "positions": [0.0, 30.0, 8.0, 15.0, 0.0, 0.0, 98.0],
+      "label": "hover over the can"
+    },
+    {
+      "t": 7.0,
+      "positions": [0.0, 30.0, 8.0, 15.0, 0.0, 0.0, 98.0],
+      "label": "hold — center the can under the jaws now"
+    },
+    {
+      "t": 8.5,
+      "positions": [0.0, 30.0, 0.0, 10.0, 0.0, 0.0, 98.0],
+      "label": "descend around the can"
+    },
+    {
+      "t": 10.0,
+      "positions": [0.0, 30.0, 0.0, 10.0, 0.0, 0.0, 84.0],
+      "label": "close on the can — stalls at the 17 N ceiling"
+    },
+    {
+      "t": 11.0,
+      "positions": [0.0, 30.0, 0.0, 10.0, 0.0, 0.0, 84.0],
+      "label": "let the grip settle"
+    },
+    {
+      "t": 13.0,
+      "positions": [0.0, 30.0, 8.0, 15.0, 0.0, 0.0, 84.0],
+      "label": "lift the can and hold it"
+    }
+  ],
+  "gripper_frame": "absolute"
+}

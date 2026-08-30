@@ -20,7 +20,7 @@ _GESTURE_ROOT = Path(__file__).resolve().parent / "gestures"
 #: "wake" is the startup showcase, played once when the demo opens.
 #: The can-prop gestures are hardware-only pantomime: every pose stays above the
 #: can's top rim (see their notes), so they read on stage without needing contact.
-CAN_GESTURE_NAMES = ("approach_can", "can_grip_top", "can_grip_bottom")
+CAN_GESTURE_NAMES = ("approach_can", "can_grip_top", "can_grip_bottom", "can_pickup", "can_fling")
 
 GESTURE_NAMES = ("wake", "attention", "decline", "point_screen", "attempt") + CAN_GESTURE_NAMES
 
