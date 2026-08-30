@@ -121,7 +121,8 @@ def kabsch(source: np.ndarray, target: np.ndarray) -> Registration:
     return Registration(rotation, translation, float(np.sqrt((residuals ** 2).mean())), residuals)
 
 
-def filter_robot_from_scan(points: np.ndarray, kinematics, poses, padding: float = 0.03) -> np.ndarray:
+def filter_robot_from_scan(points: np.ndarray, kinematics, poses, padding: float = 0.03,
+                           protect_below_z: Optional[float] = None) -> np.ndarray:
     """Drop scan points that are the robot itself, across every pose it was seen in.
 
     A sweep of the workcell inevitably includes the arm. Left in, the arm becomes
@@ -137,12 +138,20 @@ def filter_robot_from_scan(points: np.ndarray, kinematics, poses, padding: float
     poses = np.atleast_2d(np.asarray(poses, dtype=float))
 
     keep = np.ones(len(points), dtype=bool)
+    # The arm stands ON the table, so a padding generous enough to catch the
+    # arm's own scan points also swallows the tabletop directly under its base
+    # -- which then renders as an arm floating over a hole. Surfaces at or below
+    # the mounting plane are never the arm and are never removed.
+    protected = None if protect_below_z is None else points[:, 2] < protect_below_z
     for pose in poses:
         centers, radii = kinematics.collision_spheres(pose)
         for center, radius in zip(centers, radii):
             keep &= np.linalg.norm(points - center, axis=1) > (radius + padding)
         if not keep.any():
             break
+
+    if protected is not None:
+        keep |= protected
     return points[keep]
 
 

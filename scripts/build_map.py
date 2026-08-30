@@ -48,6 +48,16 @@ def main() -> None:
                         help="how far beyond the arm's own surface to treat scan points as the "
                              "arm. Must exceed the registration error, or the arm's own image "
                              "in the scan becomes an obstacle it is standing inside.")
+    parser.add_argument("--protect-below-z", type=float, default=0.05,
+                        help="scan points below this height are never treated as the arm. The "
+                             "arm stands on the table, so filtering blind removes the tabletop "
+                             "from under its base and it renders floating over a hole.")
+    parser.add_argument("--fill-table-shadow", action="store_true",
+                        help="fill the tabletop in the region the scanner could not see. The arm "
+                             "occludes the surface it stands on, so the scan has no table within "
+                             "~0.5m of the base and the arm renders floating. This completes a "
+                             "surface measured by touching it, inside the sensor's blind spot; it "
+                             "does not invent geometry the scan disagrees with.")
     parser.add_argument("--clamps", action="store_true",
                         help="add the two base clamps, which LiDAR is too coarse to resolve")
     parser.add_argument("--resolution", type=float, default=0.02)
@@ -120,6 +130,7 @@ def main() -> None:
         scan_points=points, table=table, resolution=args.resolution,
         kinematics=kinematics, scan_poses=scan_poses, scan_is_registered=registered,
         self_filter_padding=args.self_filter_padding,
+        protect_below_z=args.protect_below_z,
     )
 
     if args.obstacle_mode == "planes" and session is not None:
@@ -167,7 +178,21 @@ def main() -> None:
                   f"of the base -- those are the robot, not an obstacle")
         print(f"  {kept} touched points as {args.sphere_radius * 100:.0f}cm obstacles")
         voxel_map.compute_distance_field()
-    voxel_map.save(args.output)
+
+    if args.fill_table_shadow and session is not None:
+        touched = np.vstack([o.positions() for o in session.objects])
+        upper = touched[touched[:, 2] > -0.2]
+        lower = touched[touched[:, 2] <= -0.2]
+        if len(upper):
+            table_z = float(upper[:, 2].mean())
+            occupied_now = voxel_map.occupied_points()
+            at_height = occupied_now[np.abs(occupied_now[:, 2] - table_z) < 0.07]
+            shadow = float(np.linalg.norm(at_height[:, :2], axis=1).min()) if len(at_height) else 0.5
+            edge = float(lower[:, 0].min()) if len(lower) else shadow
+            voxel_map.add_box([-shadow, -shadow, table_z - 0.04], [min(edge, shadow), shadow, table_z])
+            print(f"  filled the tabletop shadow: z={table_z:+.3f} m from {len(upper)} touched "
+                  f"points, out to r={shadow:.2f} m where the scan starts, edge at x={min(edge, shadow):+.2f} m")
+            voxel_map.compute_distance_field()
 
     if args.clamps:
         for box in base_clamps(table_z=args.table_z if args.table_z is not None else -0.02):
@@ -175,6 +200,7 @@ def main() -> None:
         print(f"  added 2 base clamps (140 x 25 x 102 mm, +-102mm either side of centreline)")
         voxel_map.compute_distance_field()
 
+    voxel_map.save(args.output)
     occupied = int(voxel_map.occupancy.sum())
     print(f"\n  map: {voxel_map.shape} voxels at {args.resolution * 1000:.0f}mm, {occupied:,} occupied")
     print(f"  saved {args.output}")
