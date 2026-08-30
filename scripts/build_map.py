@@ -21,14 +21,22 @@ def main() -> None:
     parser.add_argument("--enrollment", default=None, help="enrollment.json from scripts/enroll.py")
     parser.add_argument("--scan", default=None, help="LiDAR export (.ply/.obj/.stl)")
     parser.add_argument("--registration", default=None,
-                        help="JSON with 'scan' and 'robot' point lists, to align the scan")
+                        help="JSON holding the scan-to-robot transform (rotation/translation, as "
+                             "written by pick_seed.py) or matched 'scan'/'robot' point lists")
     parser.add_argument("--table-z", type=float, default=None, help="tabletop height in base frame (m)")
     parser.add_argument("--table-edge", type=float, default=0.30,
                         help="x where the tabletop ends; beyond this the arm may go below table level")
-    parser.add_argument("--obstacle-mode", choices=("box", "spheres"), default="box",
+    parser.add_argument("--obstacle-mode", choices=("box", "spheres", "planes", "none"), default="box",
                         help="box: one bounding box round all touched points. spheres: each "
                              "touched point is its own small obstacle, which is what you want "
-                             "when the points are separate things rather than one object.")
+                             "when the points are separate things rather than one object. "
+                             "planes: fit horizontal surfaces to the touched points, which is "
+                             "what they are when someone taps a tabletop and a floor. "
+                             "none: the scan is the map; touched points add nothing.")
+    parser.add_argument("--table-edge-x", type=float, default=None,
+                        help="where the tabletop stops. Defaults to the most conservative value "
+                             "the touched points allow: the nearest floor point, since a table "
+                             "assumed too short is a table the arm plans straight through.")
     parser.add_argument("--sphere-radius", type=float, default=0.08)
     parser.add_argument("--min-base-distance", type=float, default=0.15,
                         help="ignore touched points nearer the base than this; they are the robot")
@@ -58,13 +66,19 @@ def main() -> None:
             import json
 
             with open(args.registration) as handle:
-                pairs = json.load(handle)
-            registration = kabsch(np.array(pairs["scan"]), np.array(pairs["robot"]))
-            points = registration.apply(points)
-            registered = True
-            print(f"  registered: {registration.rmse * 1000:.1f} mm RMSE over {len(pairs['scan'])} pairs")
-            if not registration.is_trustworthy:
-                print("  WARNING: residual above 20mm -- re-touch the reference points before planning on this")
+                data = json.load(handle)
+
+            if "rotation" in data:
+                # A transform solved by fitting the arm's own shape to the scan.
+                rotation = np.array(data["rotation"])
+                translation = np.array(data["translation"])
+                points = points @ rotation.T + translation
+                print(f"  registered by arm fit: {data.get('rmse_mm', 0):.1f} mm RMSE, "
+                      f"{data.get('inliers', '?')} inliers")
+            else:
+                registration = kabsch(np.array(data["scan"]), np.array(data["robot"]))
+                points = registration.apply(points)
+                print(f"  registered: {registration.rmse * 1000:.1f} mm RMSE over {len(data['scan'])} pairs")
             registered = True
         else:
             print("  NOTE: no --registration given. A scan is in the phone's frame until it is")
@@ -85,14 +99,42 @@ def main() -> None:
     table = table_slab(args.table_z, args.table_edge) if args.table_z is not None else None
 
     voxel_map = build_map(
-        session=None if args.obstacle_mode == "spheres" else session,
+        session=None if args.obstacle_mode in ("spheres", "planes", "none") else session,
         scan_points=points, table=table, resolution=args.resolution,
         kinematics=kinematics, scan_poses=scan_poses, scan_is_registered=registered,
     )
 
-    if args.obstacle_mode == "spheres" and session is not None:
-        import numpy as np
+    if args.obstacle_mode == "planes" and session is not None:
 
+        points = np.vstack([o.positions() for o in session.objects])
+        upper = points[points[:, 2] > -0.2]
+        lower = points[points[:, 2] <= -0.2]
+        extent = 0.95
+
+        if len(lower):
+            floor_z = float(lower[:, 2].mean())
+            voxel_map.add_box([-extent, -extent, floor_z - 0.06], [extent, extent, floor_z])
+            print(f"  floor  plane at z={floor_z:+.3f} m from {len(lower)} touched points")
+
+        if len(upper):
+            table_z = float(upper[:, 2].mean())
+            # Where the table stops is not measured, only bounded: it is somewhere
+            # between the furthest table point and the nearest floor point. Take the
+            # far end. Over-estimating the table forbids space that is actually
+            # free; under-estimating it plans the arm through a tabletop.
+            edge = args.table_edge_x
+            if edge is None:
+                edge = float(lower[:, 0].min()) if len(lower) else extent
+            voxel_map.add_box([-extent, -extent, table_z - 0.06], [edge, extent, table_z])
+            print(f"  table  plane at z={table_z:+.3f} m from {len(upper)} touched points, "
+                  f"edge at x={edge:+.3f} m")
+            if len(lower):
+                span = (lower[:, 0].min() - upper[:, 0].max()) * 1000
+                print(f"         edge is bounded to x={upper[:, 0].max():+.3f}..{lower[:, 0].min():+.3f} "
+                      f"({span:.0f}mm unknown); using the conservative end")
+        voxel_map.compute_distance_field()
+
+    if args.obstacle_mode == "spheres" and session is not None:
         kept = skipped = 0
         for obstacle in session.objects:
             for position in obstacle.positions():

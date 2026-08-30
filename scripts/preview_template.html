@@ -28,8 +28,7 @@
 </header>
 <div class="legend">
   <div><span class="sw" style="background:#E9A6B8"></span>arm</div>
-  <div><span class="sw" style="background:#C2183C"></span>obstacles: 8 touched points + 2 clamps</div>
-  <div><span class="sw" style="background:#F4C4CE"></span>tabletop</div>
+  <div><span class="sw" style="background:#C2183C"></span>LiDAR scan, registered (arm subtracted)</div>
   <div><span class="sw" style="background:#171214"></span>tip path</div>
 </div>
 <footer>
@@ -65,24 +64,17 @@ for(const [name,d] of Object.entries(DATA.meshes)){
 // Obstacles as instanced cubes: one draw call for thousands of voxels.
 const v=DATA.voxels;
 const REACH=0.85;                       // beyond this the arm cannot touch anything
-const TABLE_TOP=-0.005;                 // the slab is a flat sheet; draw it as one
 const near=[];
 for(let i=0;i<v.length;i+=3){
   const x=v[i],y=v[i+1],z=v[i+2];
-  // Voxelising the tabletop makes a 2x2m wall of cubes that fills the frame and
-  // hides the arm behind it. The table is drawn as a single plane instead, and
-  // only obstacles standing above it are drawn as voxels.
-  // Hide only the tabletop slab itself, not everything under it: four of the
-  // touched points are below table level, past the edge the arm reaches under.
-  if(z>-0.075 && z<=TABLE_TOP) continue;
+  // Everything here is measured geometry from the scan -- the table with its
+  // real edge, the clamps, whatever else is on the bench. Nothing is culled
+  // except what lies outside the arm's reach.
   if(Math.hypot(x,y)<=REACH && z<=0.9) near.push([x,y,z]);
 }
-const tableMesh=new THREE.Mesh(new THREE.PlaneGeometry(1.9,1.9),
-  new THREE.MeshStandardMaterial({color:0xC2183C,transparent:true,opacity:.10,roughness:.9,side:THREE.DoubleSide}));
-tableMesh.position.z=-0.02; world.add(tableMesh);
 const inst=new THREE.InstancedMesh(
   new THREE.BoxGeometry(DATA.voxelSize*0.9,DATA.voxelSize*0.9,DATA.voxelSize*0.9),
-  new THREE.MeshStandardMaterial({color:0xC2183C,transparent:true,opacity:.55,roughness:.6}),
+  new THREE.MeshStandardMaterial({color:0xC2183C,transparent:true,opacity:.42,roughness:.6}),
   near.length);
 const dummy=new THREE.Object3D();
 near.forEach((p,i)=>{ dummy.position.set(p[0],p[1],p[2]); dummy.updateMatrix(); inst.setMatrixAt(i,dummy.matrix); });

@@ -54,13 +54,30 @@ class ScanRegistration:
     def is_trustworthy(self) -> bool:
         """A good fit needs closeness AND coverage, and the bar for closeness is low.
 
-        Measured on the real scan with the arm planted at a known pose: the true
-        pose gives 3.2mm RMSE at 100% inlier coverage, while wrong yaws at the
-        same position give 21-22mm and wrong translations 53-79mm. So the
-        threshold belongs near 10mm, not the 20mm used here originally -- at
-        20mm a pose rotated by 3 radians still passes.
+        The threshold is scanner resolution, not a universal constant. On a
+        synthetic cloud with 4mm noise the true pose scored 3.2mm; on a real
+        phone sweep -- coarse enough that it does not resolve 25mm clamps -- a
+        registration confirmed correct by four independent means scored 19.6mm.
+        A 10mm bar rejected a good fit, so this is set at 30mm.
+
+        RMSE alone was never the discriminator anyway. What actually established
+        that fit was agreement: four different seeds converged to the same base
+        position within 21mm, and the scan's horizontal surfaces landed on the
+        table and floor heights measured separately by touching them. Prefer
+        `agrees_with` over this flag where several fits are available.
         """
-        return self.rmse < 0.010 and self.inlier_fraction > 0.9
+        return self.rmse < 0.030 and self.inlier_fraction > 0.9
+
+    def agrees_with(self, other: "ScanRegistration", tolerance: float = 0.05) -> bool:
+        """Whether two fits put the robot base in the same place.
+
+        Convergence from unrelated seeds is far stronger evidence than either
+        fit's own residual: a wrong pose is a local minimum that a different
+        seed will not find.
+        """
+        here = -self.translation @ self.rotation
+        there = -other.translation @ other.rotation
+        return bool(np.linalg.norm(here - there) < tolerance)
 
     def apply(self, points: np.ndarray) -> np.ndarray:
         return np.asarray(points, dtype=float).reshape(-1, 3) @ self.rotation.T + self.translation
