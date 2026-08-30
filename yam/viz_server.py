@@ -56,6 +56,38 @@ class VizServer:
         with self._lock:
             return dict(self._state)
 
+    def merge_scan(self, fresh, margin: float = 0.05):
+        """Fold a new sweep into the stored one, replacing what it re-observed.
+
+        Re-scanning a patch has to *override* it, not add to it: the usual reason
+        to re-scan is that something transient was captured -- a hand, an arm, a
+        person -- and simply unioning the clouds keeps the ghost forever. Points
+        inside the new sweep's bounding box are dropped before the new ones go
+        in, so whatever was there before is replaced by what is there now.
+
+        A full-room re-scan therefore replaces everything, which is what one
+        would expect, and a small patch touches only that patch.
+
+        This does NOT remove something that floated in front of a surface -- a
+        hand held between the phone and a wall leaves points at the hand's depth,
+        and re-scanning the wall produces points at the wall's depth, whose
+        bounding box need never contain the hand. Removing that needs either
+        free-space carving along the camera rays or the explicit erase below.
+        """
+        import numpy as np
+
+        fresh = np.asarray(fresh, dtype=float).reshape(-1, 3)
+        if self.scan_points is None or len(self.scan_points) == 0 or len(fresh) == 0:
+            return fresh, 0
+
+        existing = np.asarray(self.scan_points, dtype=float)
+        low = fresh.min(axis=0) - margin
+        high = fresh.max(axis=0) + margin
+        inside = np.all((existing >= low) & (existing <= high), axis=1)
+
+        kept = existing[~inside]
+        return np.vstack([kept, fresh]), int(inside.sum())
+
     @staticmethod
     def lan_address() -> Optional[str]:
         """This machine's address on the local network.
@@ -118,6 +150,9 @@ class VizServer:
                 if route == "/api/state":
                     self._send_json(server.snapshot())
                     return
+                if route == "/api/scan_summary":
+                    self._send_json(server.scan_summary or {})
+                    return
                 if route == "/api/scan_points":
                     if server.scan_points is None:
                         self._send_json({"points": [], "registered": False})
@@ -150,6 +185,9 @@ class VizServer:
                 if not self._authorized():
                     self._send_json({"error": "unauthorized"}, 401)
                     return
+                if self.path.startswith("/api/scan_erase"):
+                    self._erase()
+                    return
                 if self.path.startswith("/api/register"):
                     self._register()
                     return
@@ -169,6 +207,35 @@ class VizServer:
                 if action:
                     server.commands.put(action)
                 self._send_json({"accepted": bool(action)})
+
+            def _erase(self):
+                """Delete scanned geometry inside a sphere.
+
+                The direct answer to a transient object caught in the sweep: the
+                operator can see the artefact, so let them point at it, rather
+                than inferring it from geometry that cannot distinguish a hand
+                from a shelf.
+                """
+                length = int(self.headers.get("Content-Length", 0))
+                try:
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    centre = payload["centre"]
+                    radius = float(payload.get("radius", 0.25))
+                except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                    self._send_json({"error": "expected {centre: [x,y,z], radius: r}"}, 400)
+                    return
+
+                if server.scan_points is None or not len(server.scan_points):
+                    self._send_json({"error": "no scan to erase from"}, 400)
+                    return
+
+                import numpy as np
+
+                points = np.asarray(server.scan_points, dtype=float)
+                keep = np.linalg.norm(points - np.array(centre, dtype=float), axis=1) > radius
+                removed = int((~keep).sum())
+                server.scan_points = points[keep]
+                self._send_json({"removed": removed, "remaining": int(keep.sum())})
 
             def _register(self):
                 """Align the uploaded scan to the robot frame from paired points."""
@@ -232,7 +299,12 @@ class VizServer:
                     # thousands of points and the viewer only needs enough to
                     # recognise the room and click a feature.
                     step = max(1, len(points) // 40000)
-                    server.scan_points = points[::step]
+                    fresh = points[::step]
+
+                    merged, replaced = server.merge_scan(fresh)
+                    summary["points_kept"] = int(len(merged))
+                    summary["points_replaced"] = int(replaced)
+                    server.scan_points = merged
                     server.registration = None
                     server.scan_summary = summary
                 except Exception as error:

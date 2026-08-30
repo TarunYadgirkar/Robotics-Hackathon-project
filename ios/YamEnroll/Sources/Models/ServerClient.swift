@@ -140,6 +140,30 @@ final class ServerClient: ObservableObject {
         return try JSONDecoder().decode(ScanSummary.self, from: body)
     }
 
+    /// The scan the laptop is holding, so a fresh app launch can still show it.
+    func fetchScanPoints() async throws -> [SIMD3<Float>] {
+        guard let request = request("/api/scan_points") else { throw ClientError.notConfigured }
+        let (data, response) = try await session.data(for: request)
+        try Self.check(response, data: data)
+        let payload = try JSONDecoder().decode(ScanPointsPayload.self, from: data)
+        return stride(from: 0, to: payload.points.count - 2, by: 3).map {
+            SIMD3<Float>(Float(payload.points[$0]), Float(payload.points[$0 + 1]), Float(payload.points[$0 + 2]))
+        }
+    }
+
+    @discardableResult
+    func eraseScan(centre: SIMD3<Float>, radius: Float) async throws -> Int {
+        guard var request = request("/api/scan_erase", method: "POST") else { throw ClientError.notConfigured }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "centre": [Double(centre.x), Double(centre.y), Double(centre.z)],
+            "radius": Double(radius),
+        ])
+        let (data, response) = try await session.data(for: request)
+        try Self.check(response, data: data)
+        return (try? JSONDecoder().decode(EraseResult.self, from: data).removed) ?? 0
+    }
+
     func register(scanPoints: [[Double]], robotPoints: [[Double]]) async throws -> Registration {
         guard var request = request("/api/register", method: "POST") else { throw ClientError.notConfigured }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -220,6 +244,16 @@ struct ScanSummary: Decodable {
     var bytes: Int?
     var parseError: String?
     enum CodingKeys: String, CodingKey { case points, bytes, parseError = "parse_error" }
+}
+
+struct ScanPointsPayload: Decodable {
+    var points: [Double]
+    var registered: Bool?
+}
+
+struct EraseResult: Decodable {
+    var removed: Int
+    var remaining: Int
 }
 
 struct Registration: Decodable {

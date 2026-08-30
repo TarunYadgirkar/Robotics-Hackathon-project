@@ -17,6 +17,7 @@ struct ScanView: View {
     @State private var statusIsWarning = false
     @State private var uploading = false
     @State private var uploadedPoints: Int?
+    @State private var erasing = false
 
     private var references: [[Double]] { client.state?.references ?? [] }
 
@@ -50,12 +51,21 @@ struct ScanView: View {
                 metric("meshes", "\(scanner.meshCount)")
                 metric("vertices", format(scanner.vertexCount))
                 metric("paired", "\(pairs.count)/3")
+                metric("refs", "\(references.count)")
                 if let uploadedPoints { metric("uploaded", format(uploadedPoints)) }
             }
             if let note = scanner.trackingNote {
                 Text(note).font(.system(size: 12, weight: .medium)).foregroundStyle(.white)
             } else if !scanner.isSupported {
                 Text("No LiDAR on this device").font(.system(size: 12)).foregroundStyle(.white)
+            } else if erasing {
+                Text("Erase mode — tap to delete a 25cm ball of scan")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.red)
+            } else if uploadedPoints != nil && pairs.count < 3 {
+                Text(references.isEmpty
+                     ? "Set a Reference on the Enroll tab first"
+                     : "Tap the spot matching reference \(pairs.count + 1)")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(.white)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -97,8 +107,15 @@ struct ScanView: View {
 
             Button {
                 Haptics.tap()
-                scanner.isScanning ? scanner.pause() : scanner.start()
-            } label: { label(scanner.isScanning ? "Pause" : "Resume", scanner.isScanning ? "pause" : "play") }
+                erasing.toggle()
+                show(erasing
+                     ? "tap anything that should not be in the map"
+                     : "back to pairing points")
+            } label: {
+                label(erasing ? "Erasing" : "Erase", "eraser")
+                    .overlay(RoundedRectangle(cornerRadius: 14)
+                        .stroke(erasing ? Theme.red : .clear, lineWidth: 2))
+            }
         }
     }
 
@@ -113,6 +130,18 @@ struct ScanView: View {
     }
 
     private func handleTap(_ worldPoint: SIMD3<Float>) {
+        if erasing {
+            Task {
+                do {
+                    let removed = try await client.eraseScan(centre: worldPoint, radius: 0.25)
+                    Haptics.tap()
+                    show(removed > 0 ? "erased \(removed) points" : "nothing there to erase")
+                } catch {
+                    show("erase failed: \(error.localizedDescription)", warning: true)
+                }
+            }
+            return
+        }
         guard uploadedPoints != nil else {
             show("send the scan first, then pair points", warning: true); return
         }

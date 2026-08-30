@@ -5,6 +5,7 @@ struct EnrollView: View {
     @EnvironmentObject private var client: ServerClient
     @EnvironmentObject private var scanner: LidarScanner
     @State private var confirmingFinish = false
+    @State private var serverPoints: [SIMD3<Float>] = []
 
     private var state: EnrollmentState? { client.state }
 
@@ -23,6 +24,7 @@ struct EnrollView: View {
         VStack(spacing: 0) {
             header
             preview
+            referenceHint
             stats
             controls
         }
@@ -40,8 +42,10 @@ struct EnrollView: View {
     /// The reconstruction so far, alongside the coverage it is being judged by.
     private var preview: some View {
         ZStack(alignment: .topTrailing) {
-            if scanner.meshCount > 0 {
-                ScanPreview(scanner: scanner, revision: scanner.meshCount)
+            if scanner.meshCount > 0 || !serverPoints.isEmpty {
+                ScanPreview(scanner: scanner,
+                            revision: scanner.meshCount + serverPoints.count,
+                            serverPoints: serverPoints)
                     .clipShape(RoundedRectangle(cornerRadius: 18))
             } else {
                 RoundedRectangle(cornerRadius: 18)
@@ -62,6 +66,13 @@ struct EnrollView: View {
         }
         .frame(maxHeight: .infinity)
         .padding(.vertical, 10)
+        .task {
+            // A relaunched app has no anchors in memory, but the laptop still
+            // holds the scan; without this the Enroll tab looks empty.
+            if scanner.meshCount == 0, let points = try? await client.fetchScanPoints() {
+                serverPoints = points
+            }
+        }
     }
 
     private var header: some View {
@@ -81,11 +92,33 @@ struct EnrollView: View {
         .padding(.top, 12)
     }
 
+    private var referenceHint: some View {
+        let count = state?.references?.count ?? 0
+        let hasScan = !(state?.scans ?? []).isEmpty
+        return Group {
+            if hasScan && count < 3 {
+                HStack(spacing: 8) {
+                    Image(systemName: "scope").font(.system(size: 12))
+                    Text(count == 0
+                         ? "To align the scan: put the tip on a corner you can also see in the scan, tap Reference, then tap that same corner on the Scan tab. 3 needed."
+                         : "\(count) of 3 references. Tap the matching spot on the Scan tab, then set the next one.")
+                        .font(.system(size: 12))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(Theme.red)
+                .padding(.horizontal, 12).padding(.vertical, 9)
+                .background(Color(red: 0.98, green: 0.93, blue: 0.94), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
     private var stats: some View {
         HStack(spacing: 18) {
             stat("points", "\(state?.pointCount ?? 0)")
             stat("directions", "\(state?.patches?.filter { $0 }.count ?? 0)")
             stat("poses", "\(state?.poseSamples ?? 0)")
+            stat("refs", "\(state?.references?.count ?? 0)/3")
             if let temperature = state?.temperature {
                 stat("temp", "\(Int(temperature))°C")
             }
