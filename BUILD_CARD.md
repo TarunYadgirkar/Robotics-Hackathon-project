@@ -174,47 +174,63 @@ Every spoken line is a fixed template. Every number inside it is computed at run
 the corpus — there is no LLM anywhere in the demo path, and no number is written into the
 templates. This is said out loud on stage rather than left for a judge to discover.
 
-### Disclosure: the arm is simulated
+### The arm: real hardware, deliberately small motions
 
-**No servo moved.** `coordination/FACTS.md` recorded `HARDWARE_PRESENT: no` (no USB serial
-device present), so `arm/arm_io.py` selects the simulator backend at import. All four
-trajectory JSONs are marked `source: "sim-authored"` — they were hand-authored, not taught
-on a robot. `arm/gestures/task_demo.json` in particular is a hand-written slow tabletop
-pick-and-place, **not a recorded demonstration**.
+The demo runs on a real YAM arm (Damiao actuators over a CANable2 gs_usb adapter), driven
+by this repo's own `yam/` package. The build began sim-first — `HARDWARE_PRESENT: no` at
+kickoff — and the arm arrived mid-build; `coordination/FACTS.md` records the flip, and
+`arm/arm_io.py` selects the backend from that file at import. The simulator branch is
+retained and selectable via `ARM_FORCE_SIM=1` (the variable can only force *toward* sim,
+never toward hardware).
 
-The arm's entire repertoire is that one trajectory. In BEAT 2 the strategy *selection* is
-real — the cluster sizes, silhouette and p-value are computed from the corpus — but the
-motion played back afterwards is the same single trajectory regardless of which strategy is
-chosen. That is stated out loud during the beat.
+Bring-up was verified live: enable, home, all three gestures, and the task motion, twice
+(reduced speed then full), zero failures, with the velocity cap holding every motion to
+1.00x its scheduled duration. Two bugs were found and fixed **on the hardware** — a lock
+covering the CAN exchange that stretched an 18s gesture to 86s, and a limit check that
+rejected the arm's own resting pose (j2/j3 rest 0.01° below their bound).
+
+The hardware gestures are deliberately minimal by design decision, not limitation-hiding:
+the arm stays within ~3° of its resting pose and expression is carried by the calibrated
+gripper (gentle closing pulses, ≤10%/s against a 12%/s limit). `home()` on hardware settles
+and holds the current pose rather than sweeping to a stored one. The sim-authored
+pick-and-place is **refused** by the hardware branch (joint1 would sweep 27.9°) — that
+refusal is a tested negative control, not an accident.
+
+In BEAT 2 the strategy *selection* is real — cluster sizes, silhouette and p-value are
+computed from the corpus — but the motion played afterwards is the same small gripper cycle
+regardless of which answer is given. That is stated out loud during the beat.
 
 What is real in `arm/` regardless of backend: the velocity cap (30% of the driver's own
 limit, applied by time dilation rather than position clipping), soft-limit rejection of
 out-of-range waypoints, and freeze-and-hold on interrupt — an aborted motion does **not**
 auto-home, because homing is itself autonomous motion after someone hit stop.
 
-### Hardware branch: stubbed against YAM, never executed
+### Hardware safety: what is verified, what is structural, what is known-flaky
 
-The hardware path targets the YAM arm (Damiao actuators over CANable) via this repo's own
-`yam/` package — `yam.arm.YamArm` — not lerobot/SO-101. It is written and type-consistent
-but **has never run**, because there is no arm attached. `arm/model.py` mirrors
-`yam.arm.ARM_JOINTS` limits and derives the velocity cap from
-`yam.arm.SafetyLimits.max_step_per_tick`; `hw_backend.verify_against_yam()` re-checks that
-mirror at connect time and refuses to run if it has drifted.
+`arm/model.py` mirrors `yam.arm.ARM_JOINTS` limits and derives the velocity cap (34.4°/s =
+30% of `SafetyLimits.max_joint_speed`); `hw_backend.verify_against_yam()` re-checks that
+mirror at connect time and refuses to run if it has drifted — it fired once for real during
+bring-up when upstream renamed the governing constant, and blocked before any bus traffic.
 
-**`arm/hw_backend.preflight_checklist()` must be cleared by a human before any hardware
-run.** The two items that are not merely unchecked but *unverifiable on this machine*:
+- **Self-collision remains formally unverified.** `yam/arm.py` records that roughly 10% of
+  in-limit poses self-collide; `mujoco` and the i2rt URDF are absent, so
+  `yam.environment.ArmSafetyChecker` could not be run. The mitigation is structural rather
+  than checked: every hardware pose sits within ~5° of a pose the arm already rests in, and
+  joint2 (the ~105° base-collision trap) moves ≤3°. Conservative authoring is not a
+  collision check, and the build card says so.
+- **Comms-lost (0xD) latch: handled.** `hwsupport/keepalive.py` holds position at low rate
+  through the talking gaps between beats, with a single-pass recovery policy (one
+  `recover_stale_motors()` + `clear_errors()` attempt for a comms fault, then surface —
+  never a retry loop into a faulted bus). The keep-alive and the motion streamer alternate
+  via an explicit handoff; they are never both on the bus.
+- **Known-flaky adapter.** The CANable2 dropped off the USB bus once after a full successful
+  bring-up session (independently documented by the driver's author). `hwsupport/triage.py`
+  encodes 26 failure modes mined from the driver's own code and commits, including how to
+  distinguish host-side bus-off (fixable via `reconnect()`) from a real power/CAN fault, and
+  when the only fix is a physical reseat.
 
-- **Self-collision is unverified.** `yam/arm.py` records that roughly 10% of in-limit poses
-  self-collide and that the driver does not check for it. `mujoco` is not installed and the
-  i2rt URDF is not present, so `yam.environment.ArmSafetyChecker` could not be run against
-  the authored poses. They were authored conservatively instead (joint2 held below 18° against
-  a ~105° self-collision threshold, with a 45° assertion in the smoke test) — conservative
-  authoring is not a collision check.
-- **Comms-lost keep-alive.** `yam.arm` latches a `0xD` fault when the setpoint stream stops.
-  The demo deliberately waits on human keypresses between beats, which is exactly the gap
-  that would trip it. A keep-alive stream must be added before the hardware branch is used.
-
-Nobody should connect an arm and run this without working through that checklist.
+`arm/hw_bringup.py --read-only` verifies the link (7 motors, temperatures, resting pose)
+without enabling torque, and is the required first step of any session.
 
 ### Limitation: no variance claim is made from live data
 
