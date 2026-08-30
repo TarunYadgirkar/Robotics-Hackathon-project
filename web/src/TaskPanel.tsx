@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import Quadrant from './Quadrant'
 import { measurable, pct, type Corpus, type Task, type TaskStats } from './data'
 
 function Heatmap({ corpus, index, task }: { corpus: Corpus; index: number; task: Task }) {
@@ -56,6 +57,11 @@ export default function TaskPanel({ corpus, stats, order }: Props) {
         90% containment envelope — the reach a robot would need. Grip aperture is
         thumb-tip to index-tip over hand size: low is a precision pinch, high is a spread grasp.
       </p>
+      <Quadrant
+        corpus={corpus}
+        stats={stats}
+        onPick={(id) => document.getElementById(`task-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+      />
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(250px,1fr))]">
         {order.map((tid) => {
           const task = corpus.tasks.find((t) => t.id === tid)!
@@ -63,7 +69,7 @@ export default function TaskPanel({ corpus, stats, order }: Props) {
           const st = stats.get(tid)!
           const [x0, y0, x1, y1] = task.envelope
           return (
-            <div key={tid} className="rounded border border-line bg-panel p-3">
+            <div key={tid} id={`task-${tid}`} className="rounded border border-line bg-panel p-3">
               <div className="mb-2 flex items-baseline justify-between gap-2">
                 <h3 className="truncate text-sm font-medium">{task.name}</h3>
                 <span className="num text-sm text-accent">
