@@ -1,31 +1,31 @@
 {
-  "query": "garment iron press",
+  "query": "garment inside out",
   "tier": "ask",
-  "matched_task_id": "garment-iron-press",
+  "matched_task_id": "garment-inside-out",
   "match_score": 1.0,
   "coverage_detail": {
-    "words": [
-      {"word": "garment", "covered": true, "best_match": "garment-iron-press", "score": 1.0},
-      {"word": "iron", "covered": true, "best_match": "garment-iron-press", "score": 1.0},
-      {"word": "press", "covered": true, "best_match": "garment-iron-press", "score": 1.0}
-    ]
+    "covered": [
+      {"word": "garment", "closest": "garment", "score": 1.0},
+      {"word": "inside", "closest": "inside", "score": 1.0},
+      {"word": "out", "closest": "out", "score": 1.0}
+    ],
+    "uncovered": []
   },
   "evidence": {
-    "silhouette": 0.42,
-    "perm_p": 0.031,
-    "n_clips": 8,
-    "n_families": 6,
-    "n_cameras": 5,
-    "cluster_a_n": 5,
-    "cluster_b_n": 3
+    "silhouette_k2": 0.1524,
+    "perm_p": 0.113,
+    "n_clips": 9,
+    "n_families": 5,
+    "n_cameras": 4,
+    "cluster_maj_n": 8,
+    "cluster_min_n": 1
   },
   "utterance_slots": {
-    "n_clips": 8,
-    "task": "garment iron press",
-    "k": 2,
-    "silhouette": 0.42,
-    "perm_p": 0.031,
-    "cluster_a_n": 5,
-    "cluster_b_n": 3
+    "task": "Garment Inside Out",
+    "n_clips": 9,
+    "cluster_maj_n": 8,
+    "cluster_min_n": 1,
+    "silhouette": 0.15,
+    "perm_p": 0.11
   }
 }
