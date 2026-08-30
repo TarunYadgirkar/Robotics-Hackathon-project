@@ -50,13 +50,18 @@
     ],
     "corpus_total_clips": 424,
     "corpus_total_tasks": 50,
-    "corpus_total_hours": 35.34
+    "corpus_total_hours": 35.34,
+    "n_instruction_words": 14,
+    "instruction_chars": 59
   },
   "utterance_slots": {
     "query": "Pick up the can next to you and flip it over",
     "hours": 35.34,
     "n_tasks": 50,
     "near1": "Notebook Cover Assembly",
-    "near2": "Axle Shaft Cutting"
+    "near2": "Axle Shaft Cutting",
+    "n_instruction_words": 14,
+    "instruction_chars": 59,
+    "n_matching_demos": 0
   }
 }

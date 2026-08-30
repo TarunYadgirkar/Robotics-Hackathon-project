@@ -1,5 +1,5 @@
 {
-  "query": "wubbalubba dubdub",
+  "query": "yo pick up the can t the top and then drp it on the bottom",
   "tier": "abstain",
   "matched_task_id": null,
   "match_score": 0.0,
@@ -7,14 +7,39 @@
     "covered": [],
     "uncovered": [
       {
-        "word": "wubbalubba",
-        "closest": "axle",
-        "score": 0.286
+        "word": "yo",
+        "closest": null,
+        "score": 0.0
       },
       {
-        "word": "dubdub",
+        "word": "pick",
         "closest": "cutting",
-        "score": 0.154
+        "score": 0.182
+      },
+      {
+        "word": "t",
+        "closest": "shaft",
+        "score": 0.333
+      },
+      {
+        "word": "top",
+        "closest": "shaft",
+        "score": 0.25
+      },
+      {
+        "word": "then",
+        "closest": "cutting",
+        "score": 0.364
+      },
+      {
+        "word": "drp",
+        "closest": null,
+        "score": 0.0
+      },
+      {
+        "word": "bottom",
+        "closest": "cutting",
+        "score": 0.308
       }
     ]
   },
@@ -42,7 +67,7 @@
     "corpus_total_hours": 35.34
   },
   "utterance_slots": {
-    "query": "wubbalubba dubdub",
+    "query": "yo pick up the can t the top and then drp it on the bottom",
     "hours": 35.34,
     "n_tasks": 50,
     "near1": "Axle Shaft Cutting",

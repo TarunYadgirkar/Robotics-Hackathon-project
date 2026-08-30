@@ -1,0 +1,26 @@
+[
+  {
+    "role": "robot",
+    "text": "I have watched 35.34 hours of human work across 50 tasks. Ask me to do something."
+  },
+  {
+    "role": "human",
+    "text": "Pick up the can next to you and flip it over."
+  },
+  {
+    "role": "robot",
+    "text": "I don't have any demonstrations of this task, so I can't claim I know how to do it. Should I hold the can at the top or at the bottom, and how would you like me to flip it over?"
+  },
+  {
+    "role": "human",
+    "text": "hold the can at the top and flip it over by by pulling like"
+  },
+  {
+    "role": "robot",
+    "text": "I heard your 14 words of instruction and tried. I still have 0 demonstrations of Pick up the can next to you and flip it over - one attempt on instruction is not knowledge. Watch me learn faster if you show me."
+  },
+  {
+    "role": "human",
+    "text": "yo pick up the can t the top and then drp it on the bottom"
+  }
+]
