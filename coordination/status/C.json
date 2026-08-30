@@ -1,0 +1,12 @@
+{
+  "agent": "C",
+  "state": "running",
+  "outputs": [],
+  "smoke_test": {
+    "cmd": ".venv/bin/python arm/smoke.py",
+    "exit_code": null,
+    "output_tail": ""
+  },
+  "notes": "started; FACTS.md read: HARDWARE_PRESENT=no, HARDWARE_DEVICE_PATH=none, LEROBOT_IMPORT=fail. Building sim fallback per prompt with the hardware branch stubbed behind the FACTS flag. matplotlib 3.11.1 / numpy 1.26.4 / pillow 12.3.0 already present in .venv, 0 installs needed.",
+  "ts": "2026-08-30T12:33:00-07:00"
+}

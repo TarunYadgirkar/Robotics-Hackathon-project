@@ -1,0 +1,28 @@
+{
+  "query": "bottle flip",
+  "tier": "abstain",
+  "matched_task_id": null,
+  "match_score": 0.615,
+  "coverage_detail": {
+    "words": [
+      {"word": "bottle", "covered": true, "best_match": "bottle-cleaning", "score": 1.0},
+      {"word": "flip", "covered": false, "best_match": null, "score": 0.0}
+    ]
+  },
+  "evidence": {
+    "n_matching_demos": 0,
+    "nearest_tasks": [
+      {"task_id": "bottle-cleaning", "score": 0.615},
+      {"task_id": "bottle-surface-buffing", "score": 0.58}
+    ],
+    "corpus_total_clips": 424,
+    "corpus_total_hours": 11.8,
+    "n_live_demos": 3,
+    "n_live_demonstrators": 1
+  },
+  "utterance_slots": {
+    "n_live_demos": 3,
+    "n_live_demonstrators": 1,
+    "live_stat_line": "peak hand speed 812 px/s, 78% of frames tracked"
+  }
+}

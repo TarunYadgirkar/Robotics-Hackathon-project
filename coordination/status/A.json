@@ -1,0 +1,8 @@
+{
+  "agent": "A",
+  "state": "running",
+  "outputs": [],
+  "smoke_test": {"cmd": "", "exit_code": null, "output_tail": ""},
+  "notes": "Starting variance engine build. Read FACTS.md: dataset root is local wc-hack copy, all 424 parquets present. Installing scikit-learn (silhouette_score) and dtaidistance (pairwise DTW) via uv pip install.",
+  "ts": "2026-08-30T12:35:00-07:00"
+}

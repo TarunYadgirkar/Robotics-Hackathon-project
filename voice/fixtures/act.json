@@ -1,0 +1,18 @@
+{
+  "query": "buttonhole stitching",
+  "tier": "act",
+  "matched_task_id": "garment-button-attachment",
+  "match_score": 1.0,
+  "coverage_detail": {
+    "words": [
+      {"word": "buttonhole", "covered": true, "best_match": "garment-button-attachment", "score": 0.9},
+      {"word": "stitching", "covered": true, "best_match": "garment-button-attachment", "score": 0.88}
+    ]
+  },
+  "evidence": {
+    "silhouette": 0.11,
+    "perm_p": 0.42,
+    "n_clips": 9
+  },
+  "utterance_slots": {}
+}
