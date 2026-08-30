@@ -116,6 +116,9 @@ TEMPLATES = {
     # No slots: spoken when the capture was empty or unintelligible, so that
     # every human utterance gets a spoken response and never silence.
     "not_understood": "I did not catch that. Name a task.",
+    # Can beat: template fallback for the grip question when the LLM is
+    # unavailable. No slots — it asks, it does not claim anything.
+    "can_grip_question": "Do I hold it at the top or the bottom? Tell me how.",
     # Golden path opener. Corpus size is computed, not written in.
     "greeting": ("I have watched {hours} hours of human work across {n_tasks} tasks. "
                  "Ask me to do something."),

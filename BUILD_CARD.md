@@ -304,3 +304,27 @@ adapter disappearing from USB mid-run, which happened during this build — the 
 `[ARM OFFLINE — continuing without motion]` and the spoken line and evidence panel continue
 uninterrupted. The failure is deliberately not latched, so a later motion retries and picks
 the arm back up if it reconnects. This was verified by forcing the exception in simulation.
+
+### The can beat: the LLM speaks, a keyword match moves the arm
+
+The clearest demonstration that the language model has no control authority. The operator
+holds up a drinks can and says "put this can upside down".
+
+`brain/decide.py` returns `tier=abstain` with `match_score` **0.0** — not one content word in
+that sentence matches anything across the 50 task names (`put` and `upside` are both
+uncovered; `can`, `this` and `down` are stopwords). The arm reaches with `approach_can` and
+the robot asks whether to hold the can at the top or the bottom. That question may be phrased
+by the LLM, steered to ask about grip — but steering cannot license new facts, and the fixed
+template `"Do I hold it at the top or the bottom? Tell me how."` is used whenever the model
+is slow or unavailable.
+
+The operator's spoken answer is then matched by **keyword, not by the model**: `top`/`lid`/
+`rim` selects `can_grip_top`, `bottom`/`base`/`side` selects `can_grip_bottom`. An answer
+matching both sets or neither is unrecognised — the robot asks once more, then defaults to
+top and says so. The selected trajectory runs (the top grip rolls the wrist and turns the can
+over), and the close is the same honest one used everywhere else: it heard N words, and it
+still has zero demonstrations.
+
+So the sentence is phrased by a model and the motion is chosen by a keyword match on the
+human's own words. Those are separate code paths, and the model's output is never read for
+control.

@@ -1,21 +1,20 @@
 {
-  "query": "do a bottle flip",
+  "query": "wubbalubba dubdub",
   "tier": "abstain",
   "matched_task_id": null,
-  "match_score": 0.5,
+  "match_score": 0.0,
   "coverage_detail": {
-    "covered": [
-      {
-        "word": "bottle",
-        "closest": "bottle",
-        "score": 1.0
-      }
-    ],
+    "covered": [],
     "uncovered": [
       {
-        "word": "flip",
-        "closest": "cleaning",
-        "score": 0.333
+        "word": "wubbalubba",
+        "closest": "axle",
+        "score": 0.286
+      },
+      {
+        "word": "dubdub",
+        "closest": "cutting",
+        "score": 0.154
       }
     ]
   },
@@ -23,19 +22,19 @@
     "n_matching_demos": 0,
     "nearest_tasks": [
       {
-        "task_id": "bottle-cleaning",
-        "display_name": "Bottle Cleaning",
-        "coverage": 0.5
+        "task_id": "axle-shaft-cutting",
+        "display_name": "Axle Shaft Cutting",
+        "coverage": 0.0
       },
       {
-        "task_id": "bottle-surface-buffing",
-        "display_name": "Bottle Surface Buffing",
-        "coverage": 0.5
+        "task_id": "belly-band-assembly",
+        "display_name": "Belly Band Assembly",
+        "coverage": 0.0
       },
       {
-        "task_id": "water-filtration-bottle-filling",
-        "display_name": "Water Filtration Bottle Filling",
-        "coverage": 0.5
+        "task_id": "binding-pre-fold-stitching",
+        "display_name": "Binding Pre Fold Stitching",
+        "coverage": 0.0
       }
     ],
     "corpus_total_clips": 424,
@@ -43,10 +42,10 @@
     "corpus_total_hours": 35.34
   },
   "utterance_slots": {
-    "query": "bottle flip",
+    "query": "wubbalubba dubdub",
     "hours": 35.34,
     "n_tasks": 50,
-    "near1": "Bottle Cleaning",
-    "near2": "Bottle Surface Buffing"
+    "near1": "Axle Shaft Cutting",
+    "near2": "Belly Band Assembly"
   }
 }

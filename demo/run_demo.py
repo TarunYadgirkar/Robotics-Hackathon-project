@@ -18,7 +18,18 @@ DEMO_RUNBOOK  (read this before you go on stage)
      -> arm plays 'attempt' and it tries.
      -> it closes honestly: it heard N words, it still has 0 demonstrations.
         The attempt NOT succeeding is the point. Do not apologise for it.
-  4. It stays in the conversation loop. Judges can ask it anything — every query
+  4. THE CAN BEAT — hold up a drinks can and say "put this can upside down".
+     -> computed: tier=abstain, coverage 0.0 (NOT ONE content word is known).
+     -> arm plays 'approach_can' and hovers over it.
+     -> it asks whether to hold the can at the TOP or the BOTTOM.
+     -> YOU ANSWER out loud. "top" -> can_grip_top; "bottom"/"base"/"side" ->
+        can_grip_bottom. Unrecognised -> it asks once more, then defaults to top
+        and SAYS that it defaulted.
+     -> the chosen grip runs (top rolls the wrist and turns the can over), then
+        the same honest close: N words heard, still 0 demonstrations.
+     THE GRIP IS CHOSEN BY KEYWORD MATCH, NOT BY THE LLM. Say that out loud —
+     it is the cleanest demonstration that the model cannot move the arm.
+  5. It stays in the conversation loop. Judges can ask it anything — every query
      gets a computed answer, including ones that are not tasks at all.
 
   The one line to say out loud early:
@@ -62,6 +73,10 @@ MOTION CUE POINTS (deterministic order, one SPACE each):
                                    of paper" just before pressing)
     SPACE 3  gesture 'attempt'  -> cached close audio     (you mime describing
                                    how, for ~6s, just before pressing)
+    SPACE 4  gesture 'approach_can' -> cached can question (hold up the can and
+                                   say "put this can upside down" just before)
+    SPACE 5  gesture 'can_grip_top' -> cached can close    (say "hold it at the
+                                   top" just before pressing)
 Re-run `--build-cache` if any template or the corpus changes, otherwise the
 cached audio and the live numbers can drift apart.
 
@@ -246,6 +261,8 @@ class State:
             "beat3-instruction": INSTRUCTION_FALLBACK,  # the human teaches it out loud
             "converse2-reply": "go on",            # ask tier resolution in converse
             "converse3-instruction": INSTRUCTION_FALLBACK,
+            "converse2-grip": "hold it at the top",
+            "can-grip": "hold it at the top",
         }
         # Rehearsal-only converse pass: an act task, an ask task, an abstain task,
         # and a gibberish turn that must still get a spoken response.
@@ -461,7 +478,7 @@ def resolve_with_human(st, expected, label, max_retries=2):
     return "negative" if verdict != "affirmative" else "affirmative"
 
 
-def llm_phrase(st, decision_path, timeout=2.0):
+def llm_phrase(st, decision_path, timeout=2.0, steer=None):
     """Ask voice/llm_phrase.py to word this decision. Returns text or None.
 
     The LLM phrases; it never decides. Motion is driven by the computed tier in
@@ -473,18 +490,20 @@ def llm_phrase(st, decision_path, timeout=2.0):
     hist_path.write_text(json.dumps(st.history[-6:], indent=2))
     cmd = [PY, str(REPO_ROOT / "voice" / "llm_phrase.py"), str(decision_path),
            "--history", str(hist_path), "--timeout", str(timeout)]
+    if steer:
+        cmd += ["--steer", steer]
     out = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
     note = out.stderr.strip().splitlines()[-1] if out.stderr.strip() else ""
     if out.returncode != 0 or not out.stdout.strip():
         say(f"{DIM}  [template] {note}{OFF}")
         return None
-    say(f"{DIM}  [llm] {note}{OFF}")
+    say(f"{DIM}  {note}{OFF}")
     return out.stdout.strip()
 
 
-def speak(st, decision_path, label, template=None, allow_llm=False):
+def speak(st, decision_path, label, template=None, allow_llm=False, steer=None):
     if allow_llm:
-        phrased = llm_phrase(st, decision_path)
+        phrased = llm_phrase(st, decision_path, steer=steer)
         if phrased:
             cmd = [PY, str(REPO_ROOT / "voice" / "speak.py"), "--say", phrased]
             if st.no_audio:
@@ -883,12 +902,117 @@ def golden_path(st):
     converse(st)
 
 
+# -------------------------------------------------------------------- can beat
+
+CAN_QUERY = "put this can upside down"
+CAN_STEER = (
+    "The human is holding a physical can in front of you and you are reaching toward it. "
+    "Ask specifically whether you should hold it at the TOP or at the BOTTOM, and ask them "
+    "to tell you how. Do not claim you know how to do the task."
+)
+GRIP_TOP = {"top", "lid", "rim", "neck", "opening", "above"}
+GRIP_BOTTOM = {"bottom", "base", "side", "underneath", "below", "under"}
+
+
+def _tokens(text):
+    toks = {"".join(c for c in w if c.isalpha()) for w in (text or "").lower().split()}
+    toks.discard("")
+    return toks
+
+
+def mentions_can(text):
+    """Computed route to the can beat. 'can' as an OBJECT, not the auxiliary verb:
+    it must not be the first word, and must not be followed by 'you'."""
+    words = [w.strip(".,!?").lower() for w in (text or "").split()]
+    for i, w in enumerate(words):
+        if w == "can" and i > 0 and (i + 1 >= len(words) or words[i + 1] != "you"):
+            return True
+    return False
+
+
+def classify_grip(text):
+    """Keyword match, no LLM — THIS is what selects the motion, not the model."""
+    toks = _tokens(text)
+    top, bottom = toks & GRIP_TOP, toks & GRIP_BOTTOM
+    if top and not bottom:
+        return "top", sorted(top)
+    if bottom and not top:
+        return "bottom", sorted(bottom)
+    return None, sorted(top | bottom)
+
+
+def _gesture(st, name, fallback, seconds):
+    """Resolve a gesture path, falling back until Agent C authors the real one."""
+    if st.sim_arm:
+        gdir = REPO_ROOT / "arm" / "gestures"
+    else:
+        from arm import arm_io
+        gdir = Path(arm_io.GESTURE_DIR)
+    if (gdir / f"{name}.json").exists():
+        return name, seconds, gdir / f"{name}.json", False
+    return fallback, seconds, gdir / f"{fallback}.json", True
+
+
+def can_beat(st, transcript, label="can"):
+    """Operator holds up a can. It abstains, reaches, asks HOW to hold it, and the
+    answer — matched by keyword, never by the LLM — picks which grip motion runs."""
+    banner("CAN BEAT — a physical object it has never been shown", CYAN)
+    got = decide(st, transcript, label)
+    if got is None:
+        return False
+    path, dec = got
+    if dec["tier"] != "abstain":
+        say(f"{YEL}  expected abstain for {transcript!r}, got {dec['tier']}{OFF}")
+
+    name, secs, traj, fb = _gesture(st, "approach_can", "attention", 6.0)
+    arm_motion(st, "replay", name, secs, path=traj)
+    if fb:
+        say(f"{YEL}  NOTE: approach_can.json not authored yet (Agent C) — used "
+            f"'attention' as a placeholder.{OFF}")
+
+    speak(st, path, f"{label}-grip-q", template="can_grip_question",
+          allow_llm=True, steer=CAN_STEER)
+
+    grip, hits, answer = None, [], ""
+    for attempt in range(2):
+        answer = capture_query(st, "hold it at the top", f"{label}-grip{attempt or ''}",
+                               seconds=6) or ""
+        grip, hits = classify_grip(answer)
+        say(f"{DIM}  grip answer {answer!r} -> {grip or 'unrecognized'}"
+            f"{' on ' + ', '.join(hits) if hits else ''}{OFF}")
+        st.log(f"{label} grip answer {answer!r} -> {grip} (matched {hits})")
+        if grip:
+            break
+        if attempt == 0:
+            say(f"{YEL}  robot: \"Top or bottom?\"{OFF}")
+    if not grip:
+        grip = "top"
+        say(f"{YEL}  still unrecognized — defaulting to TOP and saying so{OFF}")
+        st.log(f"{label} grip defaulted to top after 2 unrecognized answers")
+
+    gname, gsecs, gtraj, gfb = _gesture(st, f"can_grip_{grip}", "attempt", 8.0)
+    arm_motion(st, "replay", gname, gsecs, path=gtraj)
+    if gfb:
+        say(f"{YEL}  NOTE: can_grip_{grip}.json not authored yet (Agent C) — used "
+            f"'attempt' as a placeholder.{OFF}")
+
+    slots = _instruction_slots(answer)
+    closed = _augment_decision(path, slots, f"{label}-close")
+    say(f"{DIM}  computed from the grip instruction: {json.dumps(slots)}{OFF}")
+    speak(st, closed, f"{label}-close", template="attempt_result")
+    say(f"{DIM}  Say out loud: the words were phrased by a model, but the grip that just "
+        f"ran was chosen by a keyword match on your answer — not by the model.{OFF}")
+    return True
+
+
 # ------------------------------------------------------------- scripted backup
 
 SCRIPTED_STEPS = [
     ("wake", "greeting", "greeting", None),
     ("decline", "refusal", "abstain_howto", GOLDEN_QUERY),
     ("attempt", "close", "attempt_result", GOLDEN_QUERY),
+    ("approach_can", "can_question", "can_grip_question", CAN_QUERY),
+    ("can_grip_top", "can_close", "attempt_result", None),
 ]
 
 
@@ -922,6 +1046,16 @@ def build_scripted_cache(st):
     taught["evidence"] = {**taught["evidence"], **slots}
     _scripted_decision_path("close").write_text(json.dumps(taught, indent=2))
 
+    can_raw = subprocess.run([PY, str(REPO_ROOT / "brain" / "decide.py"), CAN_QUERY],
+                             cwd=REPO_ROOT, capture_output=True, text=True)
+    can = json.loads(can_raw.stdout)
+    _scripted_decision_path("can_question").write_text(json.dumps(can, indent=2))
+    can_closed = json.loads(json.dumps(can))
+    can_slots = _instruction_slots("hold it at the top")
+    can_closed["utterance_slots"] = {**can_closed["utterance_slots"], **can_slots}
+    can_closed["evidence"] = {**can_closed["evidence"], **can_slots}
+    _scripted_decision_path("can_close").write_text(json.dumps(can_closed, indent=2))
+
     for _, kind, template, _q in SCRIPTED_STEPS:
         d = json.loads(_scripted_decision_path(kind).read_text())
         text, _ = sp.render(d, template_name=template)
@@ -944,11 +1078,15 @@ def scripted_backup(st):
         f"are real (generated by brain/decide.py), the timing is not live.{OFF}")
 
     for gesture_name, kind, _template, operator_line in SCRIPTED_STEPS:
-        if operator_line:
+        cue = {
+            "refusal": f'OPERATOR SAYS: "{GOLDEN_QUERY}"',
+            "close": "OPERATOR describes how to fold paper (freely, ~6s)",
+            "can_question": f'OPERATOR holds up the can and SAYS: "{CAN_QUERY}"',
+            "can_close": 'OPERATOR SAYS: "hold it at the top"',
+        }.get(kind)
+        if cue:
             say()
-            say(f"{BOLD}  OPERATOR SAYS: \"{operator_line}\"{OFF}"
-                if kind == "refusal" else
-                f"{BOLD}  OPERATOR describes how to do it (freely, ~6s){OFF}")
+            say(f"{BOLD}  {cue}{OFF}")
         if gate(st, f"[SCRIPTED BACKUP] {kind}: gesture '{gesture_name}' then cached audio") != "go":
             continue
 
@@ -958,7 +1096,9 @@ def scripted_backup(st):
             gdir = Path(arm_io.GESTURE_DIR)
         traj = gdir / f"{gesture_name}.json"
         if not traj.exists():
-            fb = "attention" if gesture_name == "wake" else "task_demo"
+            fb = {"wake": "attention", "approach_can": "attention",
+                  "can_grip_top": "attempt", "can_grip_bottom": "attempt"}.get(
+                      gesture_name, "task_demo")
             say(f"{YEL}  {gesture_name}.json missing — using {fb}{OFF}")
             traj = gdir / f"{fb}.json"
         arm_motion(st, "replay", gesture_name, 10.0, path=traj)
@@ -998,6 +1138,12 @@ def _not_understood_decision():
 
 def respond_to(st, transcript, label):
     """One conversational turn: decide, then ALWAYS speak and gesture per tier."""
+    # Routed before the zero-coverage noise guard on purpose: "put this can upside
+    # down" legitimately scores 0.0 (every content word is unknown), which is the
+    # honest result but would otherwise be swallowed as noise.
+    if mentions_can(transcript):
+        return can_beat(st, transcript, label)
+
     got = decide(st, transcript, label)
     if got is None:
         speak(st, _not_understood_decision(), label, template="not_understood")
@@ -1159,7 +1305,7 @@ def main():
             # backup, on top of whichever mode ran above.
             for i, beat in enumerate(BEATS, start=1):
                 beat(st)
-            st.converse_script = ["garment iron press", "wubbalubba dubdub"]
+            st.converse_script = ["garment iron press", CAN_QUERY, "wubbalubba dubdub"]
             converse(st)
             scripted_backup(st)
         banner("DEMO COMPLETE", GRN)

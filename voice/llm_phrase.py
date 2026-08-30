@@ -106,7 +106,7 @@ def detect_provider():
     return None, None, None, None
 
 
-def build_user_message(decision, history):
+def build_user_message(decision, history, steer=None):
     parts = []
     if history:
         lines = [f"{t.get('role', '?')}: {t.get('text', '')}" for t in history[-6:]]
@@ -121,6 +121,10 @@ def build_user_message(decision, history):
         "evidence": decision.get("evidence"),
         "utterance_slots": decision.get("utterance_slots"),
     }, indent=2))
+    if steer:
+        parts.append(
+            "Additional framing for THIS reply (it does not license any new facts — "
+            "rules 1-5 still bind you):\n" + steer)
     parts.append("Say the decision out loud now, in 2-3 short sentences.")
     return "\n\n".join(parts)
 
@@ -151,13 +155,13 @@ def phrase_openai(api_key, model, user_msg, timeout, base_url=None):
     return (resp.choices[0].message.content or "").strip()
 
 
-def phrase(decision, history=None, timeout=2.0):
+def phrase(decision, history=None, timeout=2.0, steer=None):
     """Returns (text, engine, latency_s). Raises on any failure — caller falls back."""
     env_key, provider, model, api_key = detect_provider()
     if not api_key:
         raise RuntimeError("no API key found for any supported provider")
 
-    user_msg = build_user_message(decision, history or [])
+    user_msg = build_user_message(decision, history or [], steer)
     t0 = time.time()
     if provider == "anthropic":
         text = phrase_anthropic(api_key, model, user_msg, timeout)
@@ -181,6 +185,7 @@ def main():
     ap.add_argument("decision_json", nargs="?")
     ap.add_argument("--history", help="JSON file: [{role, text}, ...]")
     ap.add_argument("--timeout", type=float, default=2.0)
+    ap.add_argument("--steer", help="extra framing for this reply; cannot license new facts")
     ap.add_argument("--probe", action="store_true",
                     help="report the detected provider and SDK availability, then exit")
     args = ap.parse_args()
@@ -205,7 +210,7 @@ def main():
     decision = json.loads(Path(args.decision_json).read_text())
     history = json.loads(Path(args.history).read_text()) if args.history else []
     try:
-        text, engine, latency = phrase(decision, history, args.timeout)
+        text, engine, latency = phrase(decision, history, args.timeout, args.steer)
     except Exception as exc:  # noqa: BLE001 — any failure means "use the template"
         log(f"[llm] unavailable ({type(exc).__name__}: {exc}) — caller should use template")
         return 1

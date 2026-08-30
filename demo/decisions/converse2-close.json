@@ -39,13 +39,18 @@
     ],
     "corpus_total_clips": 424,
     "corpus_total_tasks": 50,
-    "corpus_total_hours": 35.34
+    "corpus_total_hours": 35.34,
+    "n_instruction_words": 5,
+    "instruction_chars": 18
   },
   "utterance_slots": {
     "query": "put this can upside down",
     "hours": 35.34,
     "n_tasks": 50,
     "near1": "Axle Shaft Cutting",
-    "near2": "Belly Band Assembly"
+    "near2": "Belly Band Assembly",
+    "n_instruction_words": 5,
+    "instruction_chars": 18,
+    "n_matching_demos": 0
   }
 }

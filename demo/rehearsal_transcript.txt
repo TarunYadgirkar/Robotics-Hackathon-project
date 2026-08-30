@@ -5,3 +5,7 @@ arm replay decline: complete in 7.4s
 scripted refusal spoken [cached]: 'I have watched 35.34 hours of human work across 50 tasks. None of them is fold a piece of paper. The closest things I know are Binding Pre Fold Stitching and Axle Shaft Cutting. I have zero demonstrations of this. How do I do it?'
 arm replay attempt: complete in 10.6s
 scripted close spoken [cached]: 'I heard your 23 words of instruction and tried. I still have 0 demonstrations of fold a piece of paper - one attempt on instruction is not knowledge. Watch me learn faster if you show me.'
+arm replay approach_can: complete in 9.8s
+scripted can_question spoken [cached]: 'Do I hold it at the top or the bottom? Tell me how.'
+arm replay can_grip_top: complete in 18.8s
+scripted can_close spoken [cached]: 'I heard your 5 words of instruction and tried. I still have 0 demonstrations of put this can upside down - one attempt on instruction is not knowledge. Watch me learn faster if you show me.'
