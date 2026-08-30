@@ -30,6 +30,21 @@ def log(*args):
 def _normalize_coverage(coverage_detail):
     if isinstance(coverage_detail, dict) and "words" in coverage_detail:
         return coverage_detail["words"]
+    # brain/decide.py's real shape: {"covered": [...], "uncovered": [...]},
+    # each entry {word, closest, score}. Found during F's rehearsal.
+    if isinstance(coverage_detail, dict) and (
+        "covered" in coverage_detail or "uncovered" in coverage_detail
+    ):
+        words = []
+        for key, is_covered in (("covered", True), ("uncovered", False)):
+            for entry in coverage_detail.get(key) or []:
+                words.append({
+                    "word": entry.get("word", "?"),
+                    "covered": is_covered,
+                    "best_match": entry.get("closest"),
+                    "score": entry.get("score", 0.0),
+                })
+        return words
     if isinstance(coverage_detail, list):
         return coverage_detail
     raise ValueError(f"unrecognized coverage_detail shape: {type(coverage_detail).__name__}")
@@ -53,7 +68,8 @@ def render_abstain(fig, decision):
     nearest = decision.get("evidence", {}).get("nearest_tasks", [])
     if nearest:
         n_labels = [n.get("task_id", "?") for n in reversed(nearest)]
-        n_scores = [n.get("score", 0.0) for n in reversed(nearest)]
+        # decide.py names this field "coverage"; keep "score" for D's fixtures
+        n_scores = [n.get("score", n.get("coverage", 0.0)) for n in reversed(nearest)]
         ax_near.barh(n_labels, n_scores, color="#3f6fb4")
         ax_near.set_xlim(0, 1)
         ax_near.set_title("nearest known tasks")

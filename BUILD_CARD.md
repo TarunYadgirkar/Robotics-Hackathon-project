@@ -135,3 +135,109 @@ by shared history and not part of this submission. `main` holds their work only.
 424 of 424 clips extracted, zero errors, 2023 s wall clock on an M5 Pro with 5 worker
 processes. The whole corpus index is 248 KB (`states.bin`), which is why the threshold can
 be a live control in the browser instead of a decision baked in at build time.
+
+## Arm demo addendum
+
+This section covers the "I don't know how to do that yet" demo built on top of the Hands
+Index corpus. It is additive to everything above; nothing above was changed.
+
+### Reused, not built today
+
+- `pipeline/extract.py` and its output: one Parquet per clip (21 landmarks/hand, palm
+  centroid, grip aperture, speed, gyro RMS) for all 424 clips across 50 tasks. That Parquet
+  IS the trajectory representation the demo reasons over. No video was re-extracted; the raw
+  video files are not even present on this machine.
+- The corpus metadata (`meta/tasks.jsonl`, `meta/clips.jsonl`) and the `<50% detection`
+  exclusion rule, taken unchanged from the existing pipeline.
+- MediaPipe extraction settings for live webcam takes: `feedback/extract_shim.py` imports
+  `pipeline/extract.py`'s own `_get_hands()`, `add_speeds()` and landmark constants rather
+  than re-specifying them, so live demos and corpus clips are measured identically.
+
+### Built today
+
+- `variance/` — per-task DTW distance matrices over within-clip z-scored features,
+  k=2 hierarchical clustering, silhouette, and a 1000-shuffle permutation test (seed 42).
+  Plus a double confound check: cluster labels tested against both the
+  `independent_repetition_id` and the `camera_id` partitions.
+- `brain/decide.py` — content-word coverage (not string similarity) driving three tiers:
+  act / ask / abstain. No task names are hardcoded anywhere; everything is read from
+  metadata at runtime.
+- `listen/transcribe.py` (local Whisper, push-to-talk), `voice/speak.py` (fixed templates,
+  ElevenLabs TTS with a macOS `say` fallback), `voice/evidence.py` (static evidence panels).
+- `feedback/ingest.py` — webcam capture of human demonstrations through the same extraction
+  path, writing Parquet plus `feedback/live_index.json`.
+- `arm/` — the motion layer, and `demo/run_demo.py` — the keyboard-stepped state machine.
+
+### The sentences are templates; the numbers are not
+
+Every spoken line is a fixed template. Every number inside it is computed at runtime from
+the corpus — there is no LLM anywhere in the demo path, and no number is written into the
+templates. This is said out loud on stage rather than left for a judge to discover.
+
+### Disclosure: the arm is simulated
+
+**No servo moved.** `coordination/FACTS.md` recorded `HARDWARE_PRESENT: no` (no USB serial
+device present), so `arm/arm_io.py` selects the simulator backend at import. All four
+trajectory JSONs are marked `source: "sim-authored"` — they were hand-authored, not taught
+on a robot. `arm/gestures/task_demo.json` in particular is a hand-written slow tabletop
+pick-and-place, **not a recorded demonstration**.
+
+The arm's entire repertoire is that one trajectory. In BEAT 2 the strategy *selection* is
+real — the cluster sizes, silhouette and p-value are computed from the corpus — but the
+motion played back afterwards is the same single trajectory regardless of which strategy is
+chosen. That is stated out loud during the beat.
+
+What is real in `arm/` regardless of backend: the velocity cap (30% of the driver's own
+limit, applied by time dilation rather than position clipping), soft-limit rejection of
+out-of-range waypoints, and freeze-and-hold on interrupt — an aborted motion does **not**
+auto-home, because homing is itself autonomous motion after someone hit stop.
+
+### Hardware branch: stubbed against YAM, never executed
+
+The hardware path targets the YAM arm (Damiao actuators over CANable) via this repo's own
+`yam/` package — `yam.arm.YamArm` — not lerobot/SO-101. It is written and type-consistent
+but **has never run**, because there is no arm attached. `arm/model.py` mirrors
+`yam.arm.ARM_JOINTS` limits and derives the velocity cap from
+`yam.arm.SafetyLimits.max_step_per_tick`; `hw_backend.verify_against_yam()` re-checks that
+mirror at connect time and refuses to run if it has drifted.
+
+**`arm/hw_backend.preflight_checklist()` must be cleared by a human before any hardware
+run.** The two items that are not merely unchecked but *unverifiable on this machine*:
+
+- **Self-collision is unverified.** `yam/arm.py` records that roughly 10% of in-limit poses
+  self-collide and that the driver does not check for it. `mujoco` is not installed and the
+  i2rt URDF is not present, so `yam.environment.ArmSafetyChecker` could not be run against
+  the authored poses. They were authored conservatively instead (joint2 held below 18° against
+  a ~105° self-collision threshold, with a 45° assertion in the smoke test) — conservative
+  authoring is not a collision check.
+- **Comms-lost keep-alive.** `yam.arm` latches a `0xD` fault when the setpoint stream stops.
+  The demo deliberately waits on human keypresses between beats, which is exactly the gap
+  that would trip it. A keep-alive stream must be added before the hardware branch is used.
+
+Nobody should connect an arm and run this without working through that checklist.
+
+### Limitation: no variance claim is made from live data
+
+BEAT 4 ingests three live human demonstrations and cites what was measured from them —
+peak hand speed and the fraction of frames tracked. It deliberately does **not** compute a
+silhouette, a cluster split, or any strategy-variance claim from those takes.
+`n_live_demonstrators` defaults to 1: three takes by the same person is not evidence of
+cross-worker strategy diversity, and presenting it as such would be exactly the overclaim
+the rest of this build card exists to avoid. Strategy variance is computed on the corpus
+only, and only for tasks that survive both confound checks.
+
+### Limitation: no task reaches significance, and the demo says so
+
+Of the 50 tasks, none that is both deconfounded and non-excluded has `perm_p <= 0.05`. The
+strongest clean case is `garment-inside-out` at silhouette 0.152, p 0.113. Rather than
+raise a threshold to manufacture a result, BEAT 2 was reframed as majority-vs-outlier: 9
+demonstrations, 8 one way, 1 different — and the spoken line keeps the p-value disclosure
+("with 9 clips I cannot rule out chance: p equals 0.11") even though it is above 0.05. The
+non-significance at n=9 is the honest point, not a defect to be hidden. Every clean split in
+this corpus is majority-vs-one-outlier; not one splits into two balanced methods.
+
+Related: 27 of 50 tasks carry a `diversity_warning` and are confounded by construction, and
+7 more are excluded outright for sub-50% hand detection (gloves). The camera is torso-mounted
+and mount position varies, so a k=2 split will happily recover "which camera" and present it
+as "which strategy" — which is why cluster labels are tested against both the repetition-family
+and the camera partition, and a task must clear both to be eligible for the ask tier.

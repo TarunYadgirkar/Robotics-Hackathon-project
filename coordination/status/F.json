@@ -1,0 +1,68 @@
+{
+  "agent": "F",
+  "state": "done",
+  "outputs": [
+    "demo/run_demo.py",
+    "demo/rehearsal_transcript.txt",
+    "demo/decisions/beat1.json",
+    "demo/decisions/beat2.json",
+    "demo/decisions/beat3.json",
+    "demo/decisions/beat4.json",
+    "demo/panels/beat1.png",
+    "demo/panels/beat2.png",
+    "demo/panels/beat3.png",
+    "demo/panels/beat4.png",
+    "BUILD_CARD.md (new section 'Arm demo addendum' only; no FILL_ placeholder touched)"
+  ],
+  "smoke_test": {
+    "cmd": ".venv/bin/python demo/run_demo.py --rehearse --no-audio",
+    "exit_code": 0,
+    "output_tail": "beat1 heard 'garment iron press' -> tier=act matched=garment-iron-press score=1.0; arm task_demo 19.4s; panel ok | beat2 heard 'garment inside out' -> tier=ask matched=garment-inside-out; arm attention 3.4s; SPOKEN 'I have 9 demonstrations of Garment Inside Out. 8 do it one way. 1 does something different - silhouette 0.15, though with 9 clips I cannot rule out chance: p equals 0.11. Should I follow the majority, or does the outlier matter?'; panel ok; arm task_demo 19.4s | beat3 heard 'do a bottle flip' -> tier=abstain matched=None score=0.5; arm decline 7.4s; SPOKEN 'I have watched 35.34 hours of human work across 50 tasks. None of them is bottle flip. The closest things I know are Bottle Cleaning and Bottle Surface Buffing. I have zero demonstrations of this. If you show me, I will watch.'; panel ok | beat4 synthetic ingest 3 takes -> tier=abstain n_live_demos=3; arm point_screen 7.4s; SPOKEN 'I watched your 3 attempts. I now have data from 1 demonstrator... peak hand speed 0.0 normalized-units/s, 0% of frames tracked across 3 take(s).'; panel ok | DEMO COMPLETE, exit 0"
+  },
+  "verification_of_A_to_E": {
+    "A": {
+      "cmd": "variance/smoke.sh",
+      "exit_code": 0,
+      "output_tail": "computing axle-shaft-cutting... belly-band-assembly... garment-iron-press...\nwrote variance/results/smoke_variance.json (3 tasks) and variance/results/smoke_ranking.txt\nschema OK for ['axle-shaft-cutting', 'belly-band-assembly', 'garment-iron-press']\nSMOKE TEST PASSED"
+    },
+    "B": {
+      "cmd": ".venv/bin/python brain/test_decide.py",
+      "exit_code": 0,
+      "output_tail": "[PASS] CLI tier matches expectation for 'bottle flip'\n[PASS] CLI tier matches expectation for 'bottle-cleaning'\n\nALL PASS  (re-run again after F's utterance-slot fix: still exit 0, ALL PASS)"
+    },
+    "C": {
+      "cmd": ".venv/bin/python arm/smoke.py",
+      "exit_code": 0,
+      "output_tail": "PASS home.gif/png attention.gif/png decline.gif/png point_screen.gif/png task_demo.gif/png rendered\n=== all checks passed ==="
+    },
+    "D_listen": {
+      "cmd": ".venv/bin/python listen/smoke.py",
+      "exit_code": 0,
+      "output_tail": "[smoke] --text path OK: stdout='bottle flip'\n[smoke] live mic path OK: transcript='Thank you.'\n[smoke] listen/transcribe.py: PASS"
+    },
+    "D_voice": {
+      "cmd": ".venv/bin/python voice/smoke.py",
+      "exit_code": 0,
+      "output_tail": "[smoke] abstain.json / abstain_after_feedback.json / act.json (empty) / ask.json all rendered with no unfilled braces\n[smoke] voice/speak.py: PASS (4 fixtures)  (re-run after F's evidence.py fix: still exit 0)"
+    },
+    "E": {
+      "cmd": "feedback/smoke.sh",
+      "exit_code": 0,
+      "output_tail": "[selftest] source=synthetic (camera did not open - see FACTS.md WEBCAM_STATUS) frames=10 detection_rate=0.0\n[selftest] live_stat_line: peak hand speed 0.0 normalized-units/s, 0% of frames tracked across 1 take(s)\nOK selftest passed"
+    }
+  },
+  "beat_wiring": {
+    "beat1_act": "garment iron press -> tier=act, matched garment-iron-press, silhouette 0.062, deconfounded, 8 clips (orchestrator amendment 2)",
+    "beat2_ask": "garment inside out -> tier=ask, 9 clips, 8-vs-1 majority/outlier, silhouette 0.152, perm_p 0.113 disclosed on purpose (orchestrator amendment 1)",
+    "beat3_abstain": "do a bottle flip -> tier=abstain, coverage 0.5, 'flip' uncovered, 3 nearest bottle tasks",
+    "beat4_feedback": "same verbatim beat3 transcript reused as ingest --task AND as the --include-live query, because feedback/live_index.json is keyed on the raw query string"
+  },
+  "fixes_made": [
+    "brain/decide.py: abstain utterance_slots['query'] now uses the already-computed content words (' '.join(q_words)) instead of the raw phrase, so 'do a bottle flip' renders 'None of them is bottle flip' not '...is do a bottle flip'. Top-level schema field 'query' still carries the raw query. brain/test_decide.py re-run: exit 0, ALL PASS. (orchestrator amendment 4, fixed in brain as the smallest defensible change - 1 line + comment)",
+    "voice/evidence.py _normalize_coverage(): FOUND BY REHEARSAL, was a hard crash on beats 3 AND 4 (the centerpiece panels). D's fixtures use coverage_detail={'words':[{word,covered,best_match,score}]}; brain/decide.py's real output is {'covered':[...], 'uncovered':[...]} with {word,closest,score}. evidence.py raised ValueError('unrecognized coverage_detail shape: dict') on every real abstain decision. Added a branch mapping the real shape to the renderer's internal form; D's fixture shape still supported, voice/smoke.py still exit 0.",
+    "voice/evidence.py render_abstain(): nearest-task bars read n.get('score') but decide.py names that field 'coverage', so all three bars rendered at 0.0. Now falls back to 'coverage'. Verified visually: bottle-cleaning / bottle-surface-buffing / water-filtration-bottle-filling all render at 0.5.",
+    "demo/run_demo.py _reset_live_entry(): FOUND BY REHEARSAL. feedback/ingest.py appends to live_index.json by design, so a rehearsal's takes were still counted on the next run - beat 4 spoke 'I watched your 6 attempts' after recording 3. run_demo now clears this query's live entry before beat 4 records, so the spoken number is that run's number. Confirmed back to 3."
+  ],
+  "notes": "All of A-E re-verified by me, exit 0 each (outputs pasted above under verification_of_A_to_E). demo/run_demo.py is a keyboard-stepped state machine: SPACE/n advance, r redo the current step, t toggles SPOKEN<->TYPED input mid-demo (the loud-room fallback, same listen/transcribe.py code path either way), h recover-home after a freeze, q quit. It NEVER auto-advances in normal mode. Every arm motion is its own gated step, banner-labelled [ARM] with the motion name and duration before it moves; KeyboardInterrupt during a motion freezes and holds and does NOT home (arm/safety), and h is the only way out.\n\nARM: sim fallback per FACTS HARDWARE_PRESENT=no. run_demo sets ARM_SIM_RENDER=0 (os.environ.setdefault) so no per-motion GIF renders during the demo - the stills in arm/sim_out/ are already rendered. Motions run real-time so beats are timeable: home 0.6s, attention 3.4s, decline 7.4s, point_screen 7.4s, task_demo 19.4s.\n\nWEBCAM: TCC-blocked for this session's processes, so per orchestrator amendment 5 my end-to-end BEAT 4 test used the SYNTHETIC path - run_demo's rehearse mode drives feedback/capture.synthetic_frame_sequence -> extract_shim -> index.update_index (E's own functions, not a reimplementation) to produce 3 takes and a real live_index.json entry keyed on the demo query. Detection rate is 0.0 on synthetic frames (MediaPipe correctly finds no hands in a moving skin-tone blob), so the spoken live_stat_line reads 'peak hand speed 0.0 normalized-units/s, 0% of frames tracked' - the mechanics are verified end to end, the NUMBERS are not representative. The live path (feedback/ingest.py --task <query> --record 3) is untested by me and will only work from the user's own Terminal.app, which holds camera permission. If ingest exits non-zero, run_demo prints an actionable message and lets the operator narrate the beat instead of dying.\n\nTIMING RISK (measured, machine time only, no keypress pauses): home 0.6 + beat1 19.4 + beat2 45.3 + beat3 28.1 + beat4 35.2 = ~2m09s, and that EXCLUDES beat 4's real 3-take webcam recording (~30-60s). With narration this runs over the 3-minute target. Speech is the second-largest cost after the arm - ElevenLabs synthesis is sub-second (D measured 0.752s) but afplay then plays the whole utterance (22.5s / 20.7s / 27.8s for beats 2/3/4). PLAN_v2's cut order is written into run_demo's runbook header: cut BEAT 2's task_demo replay first (-19.4s, keep gesture+voice+screen), then BEAT 1 entirely (-19.4s). BEAT 3 and BEAT 4 are never cut. The orchestrator/user should decide this before the stage run.\n\nDEMO_RUNBOOK is the module docstring header of demo/run_demo.py per rule 7 (no new .md): launch command, key bindings, per-motion gates, timing/cut order, and the QuickTime backup-video recording steps.\n\nBACKUP VIDEO IS NOT RECORDED - it needs QuickTime plus a human and I cannot do it. Steps are in the runbook header. This is the one non-negotiable item still outstanding.\n\nSCOPE: git status --porcelain shows exactly ' M brain/decide.py', ' M voice/evidence.py', '?? demo/' plus the BUILD_CARD.md addendum. The two modified files outside demo/ are the orchestrator-authorised query fix and two rehearsal-found crashes in a consumer of B's schema; both owning agents were already state=done, and both agents' smoke tests were re-run green afterwards. Synthetic rehearsal artifacts (feedback/live_corpus/do_a_bottle_flip/, feedback/live_index.json) were deleted so the stage run starts clean; decide.py --include-live with no index re-verified exit 0. No git commit made - the orchestrator commits.",
+  "ts": "2026-08-30T13:20:00-07:00"
+}

@@ -1,0 +1,43 @@
+{
+  "query": "garment inside out",
+  "tier": "ask",
+  "matched_task_id": "garment-inside-out",
+  "match_score": 1.0,
+  "coverage_detail": {
+    "covered": [
+      {
+        "word": "garment",
+        "closest": "garment",
+        "score": 1.0
+      },
+      {
+        "word": "inside",
+        "closest": "inside",
+        "score": 1.0
+      },
+      {
+        "word": "out",
+        "closest": "out",
+        "score": 1.0
+      }
+    ],
+    "uncovered": []
+  },
+  "evidence": {
+    "silhouette_k2": 0.1524,
+    "perm_p": 0.113,
+    "n_clips": 9,
+    "n_families": 5,
+    "n_cameras": 4,
+    "cluster_maj_n": 8,
+    "cluster_min_n": 1
+  },
+  "utterance_slots": {
+    "task": "Garment Inside Out",
+    "n_clips": 9,
+    "cluster_maj_n": 8,
+    "cluster_min_n": 1,
+    "silhouette": 0.15,
+    "perm_p": 0.11
+  }
+}

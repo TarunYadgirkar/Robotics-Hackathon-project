@@ -1,0 +1,58 @@
+{
+  "query": "do a bottle flip",
+  "tier": "abstain",
+  "matched_task_id": null,
+  "match_score": 0.5,
+  "coverage_detail": {
+    "covered": [
+      {
+        "word": "bottle",
+        "closest": "bottle",
+        "score": 1.0
+      }
+    ],
+    "uncovered": [
+      {
+        "word": "flip",
+        "closest": "cleaning",
+        "score": 0.333
+      }
+    ]
+  },
+  "evidence": {
+    "n_matching_demos": 0,
+    "nearest_tasks": [
+      {
+        "task_id": "bottle-cleaning",
+        "display_name": "Bottle Cleaning",
+        "coverage": 0.5
+      },
+      {
+        "task_id": "bottle-surface-buffing",
+        "display_name": "Bottle Surface Buffing",
+        "coverage": 0.5
+      },
+      {
+        "task_id": "water-filtration-bottle-filling",
+        "display_name": "Water Filtration Bottle Filling",
+        "coverage": 0.5
+      }
+    ],
+    "corpus_total_clips": 424,
+    "corpus_total_tasks": 50,
+    "corpus_total_hours": 35.34,
+    "n_live_demos": 3,
+    "n_live_demonstrators": 1,
+    "live_stat_line": "peak hand speed 0.0 normalized-units/s, 0% of frames tracked across 3 take(s)"
+  },
+  "utterance_slots": {
+    "query": "bottle flip",
+    "hours": 35.34,
+    "n_tasks": 50,
+    "near1": "Bottle Cleaning",
+    "near2": "Bottle Surface Buffing",
+    "n_live_demos": 3,
+    "n_live_demonstrators": 1,
+    "live_stat_line": "peak hand speed 0.0 normalized-units/s, 0% of frames tracked across 3 take(s)"
+  }
+}

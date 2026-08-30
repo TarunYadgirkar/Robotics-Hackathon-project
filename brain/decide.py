@@ -66,7 +66,9 @@ def _abstain_result(query, q_words, ranked, stats, live):
         "corpus_total_hours": stats["hours"],
     }
     utterance_slots = {
-        "query": query,
+        # spoken slot, not the raw query: "None of them is {query}" must read
+        # "...is bottle flip", not "...is do a bottle flip"
+        "query": " ".join(q_words) if q_words else query,
         "hours": stats["hours"],
         "n_tasks": stats["n_tasks"],
         "near1": nearest[0]["display_name"] if len(nearest) > 0 else None,
