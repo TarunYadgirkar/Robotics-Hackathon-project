@@ -186,6 +186,9 @@ def read_key():
     """One keypress, no Enter. cbreak is entered and left around each read so
     subprocesses (transcribe's push-to-talk, ingest's cv2 window) get a normal
     terminal."""
+    if not sys.stdin.isatty():
+        ch = sys.stdin.read(1)
+        return ch if ch else "q"
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
@@ -262,6 +265,11 @@ def capture_query(st, expected, label):
                 entered = ""
             typed = entered or expected
         cmd += ["--text", typed]
+    else:
+        # timed capture, not push-to-talk: with stdout captured, the child's
+        # SPACE prompt is invisible and recording never starts (found live)
+        cmd += ["--seconds", "6"]
+        say(f"{GRN}  LISTENING for 6 seconds — speak now{OFF}")
     out = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
     if out.stderr.strip():
         say(f"{DIM}{out.stderr.strip()}{OFF}")
