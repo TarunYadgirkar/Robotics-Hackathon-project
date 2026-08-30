@@ -26,6 +26,10 @@ export interface Corpus {
   clipIndex: Map<string, number>; byTask: Map<string, number[]>
   narration: Record<string, { text: string; audio: string }>
   tiles: Record<string, { clip_id: string; start: number; score: number; tile: string }>
+  validation: {
+    samples: number; agreed: number; under: number; over: number
+    tasks: number; v_hi: number; seed: number
+  } | null
 }
 
 export const MEDIA_BASE = (
@@ -36,12 +40,13 @@ export const media = (p: string) => `${MEDIA_BASE}/${p}`
 
 export async function loadCorpus(): Promise<Corpus> {
   const base = import.meta.env.BASE_URL
-  const [meta, statesBuf, heatBuf, narration, tiles] = await Promise.all([
+  const [meta, statesBuf, heatBuf, narration, tiles, validation] = await Promise.all([
     fetch(`${base}data/corpus.json`).then((r) => r.json()),
     fetch(`${base}data/states.bin`).then((r) => r.arrayBuffer()),
     fetch(`${base}data/heatmaps.bin`).then((r) => r.arrayBuffer()),
     fetch(`${base}data/narration.json`).then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
     fetch(`${base}data/tiles.json`).then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+    fetch(`${base}data/validation.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ])
   const S = meta.config.clip_seconds
   const raw = new Uint8Array(statesBuf)
@@ -61,7 +66,7 @@ export async function loadCorpus(): Promise<Corpus> {
     byTask.set(c.task, list)
   })
   return {
-    ...meta, counts, speeds, heat: new Uint16Array(heatBuf), clipIndex, byTask, narration, tiles,
+    ...meta, counts, speeds, heat: new Uint16Array(heatBuf), clipIndex, byTask, narration, tiles, validation,
   }
 }
 

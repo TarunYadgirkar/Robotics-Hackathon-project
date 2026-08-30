@@ -52,15 +52,34 @@ def states_for(clip, v_hi, cfg):
     return sm
 
 
-def grab(clip, second):
-    cmd = ["ffmpeg", "-v", "error", "-ss", str(second), "-i", str(wcdata.video_path(clip)),
-           "-frames:v", "1", "-vf", f"scale={TILE_W}:{TILE_H}", "-f", "image2pipe",
+def _frame(clip, t, w, h):
+    cmd = ["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(wcdata.video_path(clip)),
+           "-frames:v", "1", "-vf", f"scale={w}:{h}", "-f", "image2pipe",
            "-vcodec", "mjpeg", "-"]
     buf = subprocess.run(cmd, capture_output=True).stdout
     if not buf:
         return None
     import io
     return Image.open(io.BytesIO(buf)).convert("RGB")
+
+
+def grab(clip, second):
+    """Both frames of the second, side by side.
+
+    A single still cannot confirm or refute a TRANSIT call, which is a claim about
+    motion. Two frames half a second apart can.
+    """
+    half = TILE_W // 2
+    a = _frame(clip, second, half, TILE_H)
+    b = _frame(clip, second + 0.5, half, TILE_H)
+    if a is None and b is None:
+        return None
+    tile = Image.new("RGB", (TILE_W, TILE_H), (8, 9, 11))
+    if a:
+        tile.paste(a, (0, 0))
+    if b:
+        tile.paste(b, (half, 0))
+    return tile
 
 
 def main():

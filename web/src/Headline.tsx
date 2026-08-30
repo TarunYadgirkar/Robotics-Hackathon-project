@@ -26,6 +26,7 @@ export default function Headline({ corpus, stats, order }: Props) {
   const grand = totals.reduce((a, b) => a + b, 0) || 1
 
   const stab = useMemo(() => stability(corpus, corpus.config.v_hi), [corpus])
+  const collected = corpus.clips.length * corpus.config.clip_seconds
   const top = ok[0], bottom = ok[ok.length - 1]
   const spread = top && bottom && bottom.st.bimanual > 0
     ? top.st.bimanual / bottom.st.bimanual : 0
@@ -42,10 +43,12 @@ export default function Headline({ corpus, stats, order }: Props) {
           The rest is one-handed handling ({pct(totals[2] / grand)}), transit between objects
           ({pct(totals[1] / grand)}), and stretches with no hands in frame ({pct(totals[0] / grand)})
           — walking, waiting, watching a machine run. Train an imitation policy on raw clips and
-          most of what it sees is not manipulation. The teachable part of this corpus is{' '}
-          <span className="num text-fg">{hours(totals[BIMANUAL])}</span>, not{' '}
-          <span className="num">{hours(grand)}</span>. Every second was labelled by tracking both
-          hands — no annotations, no training, one threshold for all {corpus.tasks.length} tasks.
+          most of what it sees is not manipulation. The teachable part is{' '}
+          <span className="num text-fg">{hours(totals[BIMANUAL])}</span> — out of{' '}
+          <span className="num">{hours(collected)}</span> collected, of which{' '}
+          <span className="num">{hours(grand)}</span> is measurable at all. Every second was
+          labelled by tracking both hands: no annotations, no training, one threshold for all{' '}
+          {corpus.tasks.length} tasks.
         </p>
 
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -66,6 +69,27 @@ export default function Headline({ corpus, stats, order }: Props) {
             Most hands-on: {top.task.name}. Least: {bottom.task.name}. The ordering, not the
             absolute number, is the claim — drag the motion threshold and watch it hold.
           </p>
+        )}
+
+        {corpus.validation && (
+          <div className="mt-4 flex flex-wrap items-center gap-4 rounded border border-line bg-panel px-4 py-3">
+            <div>
+              <div className="num text-xl text-accent">
+                {Math.round((corpus.validation.agreed / corpus.validation.samples) * 100)}%
+              </div>
+              <div className="text-[11px] text-dim">checked by eye</div>
+            </div>
+            <p className="max-w-2xl text-[11px] leading-relaxed text-dim">
+              {corpus.validation.samples} random seconds from {corpus.validation.tasks} tasks,
+              each rendered as the two frames of that second and judged against the state the
+              index assigned: {corpus.validation.agreed} agreed. Of the{' '}
+              {corpus.validation.samples - corpus.validation.agreed} that did not,{' '}
+              <span className="text-fg">{corpus.validation.under} are the index missing hands
+              that are visible</span> and {corpus.validation.over} is it over-calling two hands.
+              The error runs one way, so the number above is a floor, not a boast. Caveats and
+              the full sample table are in the repo's VALIDATION.md.
+            </p>
+          </div>
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-4 rounded border border-line bg-panel px-4 py-3">

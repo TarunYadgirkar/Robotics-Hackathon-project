@@ -4,7 +4,6 @@ interface Props { corpus: Corpus; vHi: number }
 
 export default function Limitations({ corpus, vHi }: Props) {
   const single = corpus.tasks.filter((t) => t.reps === 1)
-  const weak = corpus.tasks.filter((t) => t.det1 < 0.7).sort((a, b) => a.det1 - b.det1)
   const failed = corpus.tasks.filter((t) => !measurable(t))
   const noPreview = corpus.clips.filter((c) => !c.preview).length
 
@@ -15,27 +14,44 @@ export default function Limitations({ corpus, vHi }: Props) {
       fast alternating work reads as one continuous state.
     </>],
     ['"Hands absent" is not proof the hands were gone', <>
-      It means the tracker found nothing. Detection degrades on motion blur, occlusion by the
-      workpiece, and hands leaving the bottom of the frame — but the failure that actually bit
-      us was gloves. The bottle-cleaning worker wears blue nitrile gloves and MediaPipe's hand
-      model barely fires on them: detection runs at{' '}
-      <span className="num text-fg">
-        {pct(corpus.tasks.find((t) => t.id === 'bottle-cleaning')?.det1 ?? 0)}
-      </span>{' '}
-      across all nine of its clips. Read naively, that task looks like a worker doing nothing
-      for 45 minutes. It is a busy sink. Any task under{' '}
-      {pct(0.5)} detection is therefore held out of every headline number rather than being
-      quietly averaged in.{' '}
-      {failed.length > 0 && <>Currently held out: {failed.map((t) => t.name).join(', ')}.</>}{' '}
-      {weak.length > 0 && <>Weakest measured: {weak.filter(measurable).slice(0, 3).map((t) => `${t.name} (${pct(t.det1)})`).join(', ')}.</>}
+      It means the tracker found nothing. {failed.length} of {corpus.tasks.length} tasks fall
+      below 50% detection and are held out of every headline number rather than being quietly
+      averaged in — counting their seconds as "hands absent" would have turned busy tasks into
+      idle-looking ones. Held out:{' '}
+      {failed.sort((a, b) => a.det1 - b.det1).map((t) => `${t.name} (${pct(t.det1)})`).join(', ')}.
+      <span className="mt-2 block">
+        Three distinct causes, and we looked at footage from each rather than guessing:{' '}
+        <span className="text-fg">gloves</span> (bottle cleaning — MediaPipe's hand model does
+        not fire on blue nitrile), <span className="text-fg">material coating the hands</span>{' '}
+        (plaster ceiling tile — hands caked in wet plaster lose every colour and texture cue),
+        and <span className="text-fg">occlusion</span> (lathe operation and fabric spreading —
+        hands behind the machine, under the workpiece, or small at the frame edge).
+      </span>
+      <img
+        src={`${import.meta.env.BASE_URL}evidence/excluded-tasks-failure-modes.jpg`}
+        alt="Three frames: a lathe with the operator's hands behind the machine; hands caked in wet plaster carrying a ceiling tile; hands at the far edge of a large fabric roll"
+        className="mt-3 w-full rounded border border-line"
+      />
+      <span className="mt-1 block text-[11px]">
+        Left to right: occlusion, plaster-caked hands, hands at the frame edge.
+      </span>
       <img
         src={`${import.meta.env.BASE_URL}evidence/gloved-hands-detection-failure.jpg`}
-        alt="Frame from bottle-cleaning: a worker in blue nitrile gloves scrubbing at a sink, hands clearly visible but undetected"
+        alt="Frame from bottle cleaning: a worker in blue nitrile gloves scrubbing at a sink, both hands clearly visible but undetected"
         className="mt-3 w-full max-w-md rounded border border-line"
       />
       <span className="mt-1 block text-[11px]">
-        Both hands are plainly in frame here. The tracker found neither.
+        Bottle cleaning, {pct(corpus.tasks.find((t) => t.id === 'bottle-cleaning')?.det1 ?? 0)}{' '}
+        detection across all nine clips. Both hands are plainly in frame. The tracker found neither.
       </span>
+    </>],
+    ['Our own pre-event spot checks were too small', <>
+      Before the event we sanity-checked hand tracking on one clip per task and recorded, for
+      example, 77% detection on lathe operation. Running all {corpus.clips.length} clips, that
+      task comes out at 35%: its first clip does score 72%, and the other six run 13% to 49%.
+      The spot check was not wrong, it was one clip. Within-task variance is large enough that
+      any single-clip number — including a reassuring one — should not be trusted. This is
+      visible directly on the corpus wall, where clips of the same task often look nothing alike.
     </>],
     ['One threshold, chosen from the data, not fitted per task', <>
       The motion threshold defaults to the 75th percentile of hand speed pooled across the
