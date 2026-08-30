@@ -84,26 +84,79 @@ def test_gibberish_abstains():
 
 
 def test_ask_tier_from_fixture_variance():
-    result = decide("garment iron press", variance_path=FIXTURE_VARIANCE)
-    check("garment-iron-press (clean, low perm_p) -> tier=ask", result["tier"] == "ask", result)
+    """Amended rule (orchestrator, in-session): ask iff deconfounded, both
+    clusters non-empty, and silhouette_k2>=0.1 -- perm_p<=0.05 never fires
+    on the real corpus (best real case is ~0.11), so it is no longer a
+    gate. Framed majority-vs-outlier: cluster_maj_n/cluster_min_n, not
+    two-comparable-methods."""
+    result = decide("belly band assembly", variance_path=FIXTURE_VARIANCE)
+    check("belly-band-assembly (clean, silhouette>=0.1) -> tier=ask", result["tier"] == "ask", result)
     check("ask evidence has silhouette_k2", result["evidence"].get("silhouette_k2") == 0.42, result)
-    check("ask evidence has perm_p", result["evidence"].get("perm_p") == 0.01, result)
-    check("ask evidence cluster sizes sum to n_clips",
-          (result["evidence"].get("cluster_a_n") or 0) + (result["evidence"].get("cluster_b_n") or 0) == 8,
+    check("ask evidence cluster_maj_n/min_n sum to n_clips",
+          (result["evidence"].get("cluster_maj_n") or 0) + (result["evidence"].get("cluster_min_n") or 0) == 8,
           result)
-    check("ask utterance_slots has k=2", result["utterance_slots"].get("k") == 2, result)
+    check("ask evidence cluster_maj_n is the larger split",
+          result["evidence"].get("cluster_maj_n") >= result["evidence"].get("cluster_min_n"), result)
+    slots = result["utterance_slots"]
+    for key in ("task", "n_clips", "cluster_maj_n", "cluster_min_n", "silhouette", "perm_p"):
+        check(f"ask utterance_slots has {key!r}", key in slots, slots)
+    check("ask utterance_slots silhouette rounded to 2dp", slots.get("silhouette") == 0.42, slots)
+    check("ask utterance_slots perm_p rounded to 2dp", slots.get("perm_p") == 0.11, slots)
 
 
 def test_confounded_task_falls_back_to_act():
     result = decide("axle shaft cutting", variance_path=FIXTURE_VARIANCE)
-    check("axle-shaft-cutting (confounded, despite low perm_p) -> tier=act",
+    check("axle-shaft-cutting (confounded, despite silhouette>=0.1) -> tier=act",
+          result["tier"] == "act", result)
+
+
+def test_degenerate_single_cluster_falls_back_to_act():
+    """Deconfounded + high silhouette is not enough if the k=2 labeling is
+    degenerate (every clip in one cluster) -- there is no minority to ask
+    about, so 'both clusters non-empty' must independently gate ask."""
+    result = decide("garment quality checking", variance_path=FIXTURE_VARIANCE)
+    check("garment-quality-checking (single-cluster labels) -> tier=act despite silhouette>=0.1",
           result["tier"] == "act", result)
 
 
 def test_excluded_task_falls_back_to_act():
-    result = decide("drilling", variance_path=FIXTURE_VARIANCE)
-    check("drilling (excluded in variance.json) -> tier=act", result["tier"] == "act", result)
-    check("drilling -> variance_available=False", result["evidence"].get("variance_available") is False, result)
+    result = decide("processing fabric cut", variance_path=FIXTURE_VARIANCE)
+    check("processing-fabric-cut (excluded in variance.json) -> tier=act", result["tier"] == "act", result)
+    check("processing-fabric-cut -> variance_available=False", result["evidence"].get("variance_available") is False, result)
+
+
+def test_real_variance_ask_cases():
+    """Verify against the real variance/results/variance.json (now present,
+    default path -- no variance_path override): these three deconfounded
+    tasks have the corpus's highest silhouettes (0.152/0.124/0.122), all as
+    8-1 or 7-1 majority/outlier splits."""
+    for query, expected_task_id in [
+        ("garment inside out", "garment-inside-out"),
+        ("fabric layering", "fabric-layering"),
+        ("garment carton packing", "garment-carton-packing"),
+    ]:
+        result = decide(query)
+        check(f"{query!r} (real variance.json) -> tier=ask", result["tier"] == "ask", result)
+        check(f"{query!r} -> matched_task_id={expected_task_id}",
+              result["matched_task_id"] == expected_task_id, result)
+        slots = result["utterance_slots"]
+        check(f"{query!r} -> utterance_slots has cluster_maj_n and cluster_min_n",
+              "cluster_maj_n" in slots and "cluster_min_n" in slots, slots)
+        check(f"{query!r} -> minority cluster is non-empty",
+              slots.get("cluster_min_n", 0) > 0, slots)
+
+
+def test_real_variance_act_cases():
+    """garment-iron-press (silhouette 0.0625) and drilling (silhouette
+    0.026) both fall below the 0.1 gate on the real corpus -> tier=act."""
+    for query, expected_task_id in [
+        ("garment iron press", "garment-iron-press"),
+        ("drilling", "drilling"),
+    ]:
+        result = decide(query)
+        check(f"{query!r} (real variance.json) -> tier=act", result["tier"] == "act", result)
+        check(f"{query!r} -> matched_task_id={expected_task_id}",
+              result["matched_task_id"] == expected_task_id, result)
 
 
 def test_missing_variance_defaults_to_act_not_abstain():
@@ -158,8 +211,11 @@ def main():
     test_gibberish_abstains()
     test_ask_tier_from_fixture_variance()
     test_confounded_task_falls_back_to_act()
+    test_degenerate_single_cluster_falls_back_to_act()
     test_excluded_task_falls_back_to_act()
     test_missing_variance_defaults_to_act_not_abstain()
+    test_real_variance_ask_cases()
+    test_real_variance_act_cases()
     test_include_live_adds_evidence()
     test_no_hardcoded_task_names_in_source()
     test_cli_json_contract()

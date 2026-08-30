@@ -1,11 +1,11 @@
 {
-  "garment-iron-press": {
+  "belly-band-assembly": {
     "n_clips": 8,
     "n_families": 6,
     "n_cameras": 5,
     "detection_rate": 0.92,
     "silhouette_k2": 0.42,
-    "perm_p": 0.01,
+    "perm_p": 0.11,
     "labels": [0, 0, 0, 1, 1, 1, 1, 0],
     "families": ["f1", "f2", "f3", "f4", "f5", "f6", "f1", "f2"],
     "cameras": ["c1", "c2", "c3", "c4", "c5", "c1", "c2", "c3"],
@@ -29,7 +29,22 @@
     "excluded": false,
     "exclude_reason": null
   },
-  "drilling": {
+  "garment-quality-checking": {
+    "n_clips": 9,
+    "n_families": 4,
+    "n_cameras": 4,
+    "detection_rate": 0.9,
+    "silhouette_k2": 0.6,
+    "perm_p": 0.01,
+    "labels": [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "families": ["f1", "f2", "f3", "f4", "f1", "f2", "f3", "f4", "f1"],
+    "cameras": ["c1", "c2", "c3", "c4", "c1", "c2", "c3", "c4", "c1"],
+    "family_confounded": false,
+    "camera_confounded": false,
+    "excluded": false,
+    "exclude_reason": null
+  },
+  "processing-fabric-cut": {
     "n_clips": 4,
     "n_families": 2,
     "n_cameras": 2,

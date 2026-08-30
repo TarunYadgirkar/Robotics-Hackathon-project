@@ -24,12 +24,16 @@ from metadata import clips_for_task, corpus_stats, load_clips, load_tasks  # noq
 from variance_io import load_live_index, load_variance  # noqa: E402
 
 
-def cluster_sizes(labels):
+def cluster_maj_min(labels):
+    """Majority/minority split sizes for a k=2 labeling. Returns (None, None)
+    if labels is empty; returns (n, 0) if only one label value appears (a
+    degenerate, single-cluster result) so callers can detect "not really
+    two clusters" via min_n == 0."""
     if not labels:
         return None, None
-    a = sum(1 for label in labels if label == 0)
-    b = sum(1 for label in labels if label == 1)
-    return a, b
+    n0 = sum(1 for label in labels if label == 0)
+    n1 = sum(1 for label in labels if label == 1)
+    return (n0, n1) if n0 >= n1 else (n1, n0)
 
 
 def _live_for_query(query, include_live, live_path):
@@ -102,28 +106,41 @@ def _matched_result(query, best, clips, variance, live):
         camera_confounded = task_variance.get("camera_confounded")
         perm_p = task_variance.get("perm_p")
         silhouette = task_variance.get("silhouette_k2")
-        usable_for_ask = (family_confounded is False) and (camera_confounded is False)
+        maj_n, min_n = cluster_maj_min(task_variance.get("labels"))
+        both_clusters_nonempty = bool(min_n)  # None or 0 -> False
 
-        if usable_for_ask and perm_p is not None and perm_p <= 0.05:
+        # Amended tier rule (orchestrator, in-session): the real corpus never
+        # produces perm_p<=0.05 on a deconfounded task (n=6-9, best case
+        # p~=0.11), so that gate never fires and BEAT 2 would be silent
+        # forever. Gate on silhouette_k2>=0.1 instead, and frame the "ask" as
+        # majority-vs-outlier rather than two-comparable-methods -- that is
+        # what an 8-1/7-1 split actually is.
+        ask_eligible = (
+            family_confounded is False
+            and camera_confounded is False
+            and both_clusters_nonempty
+            and silhouette is not None
+            and silhouette >= 0.1
+        )
+
+        if ask_eligible:
             tier = "ask"
-            cluster_a_n, cluster_b_n = cluster_sizes(task_variance.get("labels"))
             evidence = {
                 "silhouette_k2": silhouette,
                 "perm_p": perm_p,
                 "n_clips": task_variance.get("n_clips", n_clips),
                 "n_families": task_variance.get("n_families"),
                 "n_cameras": task_variance.get("n_cameras"),
-                "cluster_a_n": cluster_a_n,
-                "cluster_b_n": cluster_b_n,
+                "cluster_maj_n": maj_n,
+                "cluster_min_n": min_n,
             }
             utterance_slots = {
                 "task": best["display_name"],
                 "n_clips": evidence["n_clips"],
-                "k": 2,
-                "silhouette": silhouette,
-                "perm_p": perm_p,
-                "cluster_a_n": cluster_a_n,
-                "cluster_b_n": cluster_b_n,
+                "cluster_maj_n": maj_n,
+                "cluster_min_n": min_n,
+                "silhouette": round(silhouette, 2),
+                "perm_p": round(perm_p, 2) if perm_p is not None else None,
             }
         else:
             tier = "act"
