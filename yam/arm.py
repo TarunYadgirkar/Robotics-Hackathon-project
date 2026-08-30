@@ -18,6 +18,7 @@ from yam import can_compat  # noqa: F401  (patches gs_usb for macOS)
 from yam.dm_motor import (
     CLEAR_ERROR,
     COMMUNICATION_LOST,
+    NORMAL_ERROR_CODE,
     DISABLE,
     ENABLE,
     FEEDBACK_ID_OFFSET,
@@ -214,14 +215,39 @@ class YamArm:
         return stale
 
     def enable(self) -> ArmState:
+        """Enable every motor, clearing a comms-timeout latch per motor as it appears.
+
+        Clearing all the motors up front does not hold: enabling is sequential,
+        and a motor cleared at the start of the sweep can time out again while
+        the motors ahead of it are still being enabled. So each motor is cleared
+        and retried at the moment it reports the latch.
+        """
         self._drain()
         feedback = []
         for joint in self.joints:
             fb = self._exchange(joint, ENABLE)
+            # Retry while the motor reports anything but "enabled". A latched
+            # 0xD needs clearing first; a 0x0 usually means we read a frame the
+            # motor queued before the enable landed, so draining is enough.
+            for _ in range(4):
+                if fb.error_code == NORMAL_ERROR_CODE:
+                    break
+                if fb.error_code == COMMUNICATION_LOST:
+                    self._clear_joint(joint)
+                self._drain()
+                time.sleep(0.01)
+                fb = self._exchange(joint, ENABLE)
             feedback.append(fb)
             self._enabled_ids.append(joint.motor_id)
             self._last_command[joint.motor_id] = fb.position
         return self._to_state(feedback)
+
+    def _clear_joint(self, joint: JointConfig) -> None:
+        for _ in range(3):
+            self.bus.send(can.Message(
+                arbitration_id=joint.motor_id, data=bytearray(CLEAR_ERROR), is_extended_id=False
+            ))
+            time.sleep(0.002)
 
     def clear_errors(self) -> None:
         """Clear latched motor error words.
@@ -231,11 +257,7 @@ class YamArm:
         enable() -- clearing the error does not re-enable the motor.
         """
         for joint in self.joints:
-            for _ in range(3):
-                self.bus.send(can.Message(
-                    arbitration_id=joint.motor_id, data=bytearray(CLEAR_ERROR), is_extended_id=False
-                ))
-                time.sleep(0.002)
+            self._clear_joint(joint)
         self._drain()
 
     def disable(self) -> None:
