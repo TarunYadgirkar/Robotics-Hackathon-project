@@ -1,5 +1,7 @@
+import { useMemo } from 'react'
 import {
-  BIMANUAL, STATE_COLORS, hours, measurable, pct, type Corpus, type TaskStats,
+  BIMANUAL, STATE_COLORS, hours, measurable, pct, stability,
+  type Corpus, type TaskStats,
 } from './data'
 import type { Hit } from './Wall'
 
@@ -23,6 +25,7 @@ export default function Headline({ corpus, stats, order }: Props) {
   for (const r of ok) r.st.tallies.forEach((v, i) => (totals[i] += v))
   const grand = totals.reduce((a, b) => a + b, 0) || 1
 
+  const stab = useMemo(() => stability(corpus, corpus.config.v_hi), [corpus])
   const top = ok[0], bottom = ok[ok.length - 1]
   const spread = top && bottom && bottom.st.bimanual > 0
     ? top.st.bimanual / bottom.st.bimanual : 0
@@ -64,6 +67,29 @@ export default function Headline({ corpus, stats, order }: Props) {
             absolute number, is the claim — drag the motion threshold and watch it hold.
           </p>
         )}
+
+        <div className="mt-4 flex flex-wrap items-center gap-4 rounded border border-line bg-panel px-4 py-3">
+          <div>
+            <div className="num text-xl text-accent">ρ ≥ {stab.worst.toFixed(2)}</div>
+            <div className="text-[11px] text-dim">ordering stability</div>
+          </div>
+          <svg viewBox="0 0 220 44" className="h-11 w-56" role="img" aria-label="rank correlation against threshold">
+            <line x1={0} y1={40} x2={220} y2={40} stroke="#2a2f38" />
+            <polyline
+              fill="none" stroke="#ffb020" strokeWidth={1.5}
+              points={stab.rhos
+                .map((r, i) => `${(i / (stab.rhos.length - 1)) * 220},${40 - Math.max(0, (r - 0.5) / 0.5) * 36}`)
+                .join(' ')}
+            />
+          </svg>
+          <p className="max-w-md text-[11px] leading-relaxed text-dim">
+            Sweeping the motion threshold across its whole range — {stab.thresholds[0]} to{' '}
+            {stab.thresholds[stab.thresholds.length - 1]} — the rank ordering of tasks never
+            falls below Spearman ρ = {stab.worst.toFixed(2)} against the default. The
+            percentages move; who is at the top does not. That is the part we are willing to
+            defend.
+          </p>
+        </div>
 
         {failed.length > 0 && (
           <div className="mt-4 rounded border border-red-900/60 bg-red-950/20 px-4 py-3 text-xs">

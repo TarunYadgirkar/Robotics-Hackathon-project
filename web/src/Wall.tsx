@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { STATE_COLORS, clipStates, type Corpus, type TaskStats } from './data'
+import { STATE_COLORS, clipStates, measurable, type Corpus, type TaskStats } from './data'
 
 const ROW_H = 13, ROW_GAP = 2, HEAD_H = 22, LABEL_W = 210, SEC_PX = 2
 
@@ -50,19 +50,27 @@ export default function Wall({ corpus, vHi, stats, order, highlight, onPick }: P
     for (const h of layout.heads) {
       const st = stats.get(h.task)
       const task = corpus.tasks.find((t) => t.id === h.task)
-      g.fillStyle = '#e7e9ee'
+      g.fillStyle = task && !measurable(task) ? '#6b7280' : '#e7e9ee'
       g.fillText(task?.name ?? h.task, 0, h.y + 13)
-      if (st) {
+      const usable = !task || measurable(task)
+      if (st && usable) {
         g.fillStyle = '#ffb020'
         g.fillText(`${(st.bimanual * 100).toFixed(0)}%`, LABEL_W - 34, h.y + 13)
-        g.fillStyle = '#2a2f38'
-        g.fillRect(LABEL_W, h.y + 8, S * SEC_PX, 1)
+      } else {
+        g.fillStyle = '#f87171'
+        g.fillText('tracker fails', LABEL_W - 72, h.y + 13)
       }
+      g.fillStyle = '#2a2f38'
+      g.fillRect(LABEL_W, h.y + 8, S * SEC_PX, 1)
     }
 
     for (const row of layout.rows) {
       const states = clipStates(corpus, row.clipIdx, vHi)
-      const dim = highlight && !highlight.has(row.clipIdx)
+      const task = corpus.tasks.find(
+        (t) => t.id === corpus.clips[row.clipIdx].task,
+      )
+      const dim =
+        (highlight && !highlight.has(row.clipIdx)) || (task && !measurable(task))
       g.globalAlpha = dim ? 0.18 : 1
       for (let s = 0; s < S; s++) {
         g.fillStyle = STATE_COLORS[states[s]]

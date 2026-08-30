@@ -149,3 +149,45 @@ export const pct = (x: number) => `${(x * 100).toFixed(1)}%`
 export const clock = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 export const hours = (s: number) => `${(s / 3600).toFixed(1)} h`
+
+/** Spearman rank correlation between two equal-length score vectors. */
+export function spearman(a: number[], b: number[]): number {
+  const rank = (xs: number[]) => {
+    const order = xs.map((v, i) => [v, i] as const).sort((p, q) => p[0] - q[0])
+    const r = new Array<number>(xs.length)
+    for (let i = 0; i < order.length; ) {
+      let j = i
+      while (j + 1 < order.length && order[j + 1][0] === order[i][0]) j++
+      const avg = (i + j) / 2 + 1
+      for (let k = i; k <= j; k++) r[order[k][1]] = avg
+      i = j + 1
+    }
+    return r
+  }
+  const ra = rank(a), rb = rank(b), n = a.length
+  if (n < 2) return 1
+  const mean = (xs: number[]) => xs.reduce((p, q) => p + q, 0) / xs.length
+  const ma = mean(ra), mb = mean(rb)
+  let num = 0, da = 0, db = 0
+  for (let i = 0; i < n; i++) {
+    const x = ra[i] - ma, y = rb[i] - mb
+    num += x * y; da += x * x; db += y * y
+  }
+  return da && db ? num / Math.sqrt(da * db) : 1
+}
+
+export interface Stability { thresholds: number[]; rhos: number[]; worst: number }
+
+/** How much the task ordering depends on where the threshold is put. */
+export function stability(c: Corpus, reference: number): Stability {
+  const ids = c.tasks.filter(measurable).map((t) => t.id)
+  const shares = (v: number) => {
+    const st = taskStats(c, v)
+    return ids.map((id) => st.get(id)?.bimanual ?? 0)
+  }
+  const ref = shares(reference)
+  const thresholds: number[] = []
+  for (let v = 0.15; v <= 1.001; v += 0.05) thresholds.push(+v.toFixed(2))
+  const rhos = thresholds.map((v) => spearman(ref, shares(v)))
+  return { thresholds, rhos, worst: Math.min(...rhos) }
+}
