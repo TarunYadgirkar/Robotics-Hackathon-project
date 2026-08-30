@@ -1,0 +1,65 @@
+{
+  "agent": "R1",
+  "state": "done",
+  "task": "web+local research: i2rt YAM open-source model/specs, berkeley-hack-guides, gesture demo patterns; local mujoco+ArmSafetyChecker verification",
+  "outputs": [
+    "hwresearch/i2rt/robot_models/arm/yam_pro/v1/yam_pro.urdf",
+    "hwresearch/i2rt/robot_models/arm/yam_pro/v1/yam_pro.xml",
+    "hwresearch/i2rt/robot_models/arm/yam_pro/v1/README.md",
+    "hwresearch/i2rt/robot_models/arm/yam_pro/v1/assets/*.stl (base, gripper, link1-5, tip_left, tip_right)"
+  ],
+  "repos_found": {
+    "i2rt_official": "https://github.com/i2rt-robotics/i2rt (default branch: main) -- plug-and-play Python interface for YAM arms + Flow Base, MuJoCo gravity comp, sim, URDF/MJCF models, gello teleop, bimanual lead-follower, trajectory record/replay",
+    "gello_software": "https://github.com/wuphilipp/gello_software -- general teleop framework, YAM is the best-supported config",
+    "robots_realtime": "https://github.com/uynitsuj/robots_realtime -- realtime/high-freq control incl. bimanual I2RT YAM, teleop or autonomous policy control",
+    "berkeley_automation_i2rt2": "https://github.com/BerkeleyAutomation/i2rt2 (fork/variant, not inspected in depth)",
+    "berkeley_hack_guides": "https://github.com/max-titov/berkeley-hack-guides -- EXISTS but has NO YAM content. Only 3 files: README.md, so101-from-scratch-commands.md (SO-101/LeRobot/Feetech workshop setup, unrelated arm), world-context-data-howto.md (egocentric video dataset explorer). Confirmed via GitHub API tree listing on main branch -- nothing to extract for YAM."
+  },
+  "model_verified": {
+    "raw_urls": [
+      "https://raw.githubusercontent.com/i2rt-robotics/i2rt/main/i2rt/robot_models/arm/yam_pro/v1/yam_pro.urdf",
+      "https://raw.githubusercontent.com/i2rt-robotics/i2rt/main/i2rt/robot_models/arm/yam_pro/v1/yam_pro.xml",
+      "https://raw.githubusercontent.com/i2rt-robotics/i2rt/main/i2rt/robot_models/arm/yam_pro/v1/assets/{base,gripper,link1,link2,link3,link4,link5,tip_left,tip_right}.stl"
+    ],
+    "match_confirmed": "yam_pro.xml joint ranges (rad) verified identical to yam/arm.py ARM_JOINTS: j1[-2.61799,3.14159] j2[0,3.66519] j3[0,3.14159] j4[-1.69297,1.5708] j5[-1.5708,1.5708] j6[-2.0944,2.0944]. This is unambiguously the correct 6-DOF YAM Pro v1 + gripper model, not the base 'yam' or 'yam_ultra' variants.",
+    "dof": 6,
+    "gripper": "child body 'gripper' is a mount frame only in the arm-only MJCF (placeholder inertial); tip_left/tip_right meshes present in URDF for collision, matches yam/kinematics.py MOVING_LINKS expectations exactly"
+  },
+  "hardcoded_path_orchestrator_should_symlink": {
+    "expected_urdf": "/Users/tarunyadgirkar/TarunsCode/hackathons/i2rt/i2rt/robot_models/arm/yam_pro/v1/yam_pro.urdf",
+    "expected_xml": "/Users/tarunyadgirkar/TarunsCode/hackathons/i2rt/i2rt/robot_models/arm/yam_pro/v1/yam_pro.xml",
+    "source": "yam/kinematics.py DEFAULT_URDF resolves to dirname(dirname(kinematics.py)) + '../i2rt/i2rt/robot_models/arm/yam_pro/v1/yam_pro.urdf' i.e. a sibling 'i2rt' checkout next to the repo root; scripts/plan_and_run.py ARM_XML = '../i2rt/i2rt/robot_models/arm/yam_pro/v1/yam_pro.xml' (relative to repo root when run as `python scripts/plan_and_run.py`), same sibling location.",
+    "fix": "mkdir -p /Users/tarunyadgirkar/TarunsCode/hackathons/i2rt/i2rt/robot_models/arm/yam_pro/v1 && symlink (or copy) this task's hwresearch/i2rt/robot_models/arm/yam_pro/v1/{yam_pro.urdf,yam_pro.xml,assets} into it. Not done here per instructions (hwresearch/ only, no CAN/arm/demo dirs touched)."
+  },
+  "mujoco_verification": {
+    "install": "uv pip install mujoco into .venv -> mujoco==3.12.0 installed cleanly (plus glfw, pyopengl, etils, zipp)",
+    "cmd": ".venv/bin/python -c \"import mujoco; m=mujoco.MjModel.from_xml_path('hwresearch/i2rt/robot_models/arm/yam_pro/v1/yam_pro.xml'); print(m.njnt)\"",
+    "output": "6",
+    "joint_names": ["joint1","joint2","joint3","joint4","joint5","joint6"],
+    "jnt_range_confirmed": "[[-2.61799,3.14159],[0,3.66519],[0,3.14159],[-1.69297,1.5708],[-1.5708,1.5708],[-2.0944,2.0944]]"
+  },
+  "arm_safety_checker_status": "WORKS -- constructed successfully end to end with the downloaded files",
+  "arm_safety_checker_invocation": {
+    "code": "from yam.kinematics import YamKinematics\nfrom yam.voxel_map import VoxelMap\nfrom yam.environment import ArmSafetyChecker\n\nkin = YamKinematics(urdf_path='hwresearch/i2rt/robot_models/arm/yam_pro/v1/yam_pro.urdf')\nvmap = VoxelMap.from_bounds([-1,-1,-1], [1,1,1], resolution=0.05)\nchecker = ArmSafetyChecker(kin, vmap, 'hwresearch/i2rt/robot_models/arm/yam_pro/v1/yam_pro.xml')\nchecker.is_free([0.0]*6)  # -> True\nchecker.clearance([0.0]*6)  # -> inf (empty voxel map, home pose)",
+    "notes": "kin.link_geometry loaded for base, gripper, link1-5, tip_left, tip_right -- matches MOVING_LINKS in yam/environment.py exactly. No mujoco build issues on this machine (arm64 macOS, py3.12) despite yam/kinematics.py's docstring caveat that 'mujoco's build chain does not install cleanly here' -- that may be stale or refer to a different machine/build path; a plain `uv pip install mujoco` pulled a prebuilt wheel with zero build step. Constructor also ran self-collision calibration (1200 samples default) without error at import/construct time."
+  },
+  "gesture_ideas": [
+    {
+      "name": "wave",
+      "source": "adapted from i2rt examples/minimum_gello + record_replay_trajectory patterns (joint-space keyframe interpolation, no IK needed)",
+      "joint_space_sketch": "Hold j1,j2,j3,j4 near a raised 'arm up' pose (e.g. j2~1.2, j3~1.0, j4~0.3 rad) and oscillate only joint6 (wrist rotate, range +-2.0944 rad) between about -0.6 and +0.6 rad at ~1-2 Hz for 3-4 cycles, using yam.arm.YamArm.move_to for the raise and a simple sinusoidal command_positions loop for the oscillation. Cheapest gesture: only 1 joint moves at speed, everything else stays in a safety-checked static pose."
+    },
+    {
+      "name": "point",
+      "source": "adapted from record_replay_trajectory.py's teach-then-replay pattern and solve_ik_collision_free in yam/kinematics.py",
+      "joint_space_sketch": "Use solve_ik_collision_free(kinematics, target_xyz, checker, lower, upper) to solve a joint pose whose tip/probe axis aims at a target point (e.g. extend j3 to ~0.6-0.9, j4 near 0 to keep the forearm straight, j5/j6 near 0 for no wrist twist), then move_to that pose and hold. Verify with checker.segment_is_free(start, goal) before executing, per plan_and_run.py's existing pattern."
+    },
+    {
+      "name": "nod / acknowledge (pick-adjacent gesture)",
+      "source": "inspired by bimanual_lead_follower.py's smooth small-amplitude joint moves used for handoff cues",
+      "joint_space_sketch": "Small-amplitude oscillation on joint3 (shoulder lift, range [0, pi]) of about +-0.15 rad around a resting bent pose, 2 cycles at ~0.5 Hz -- reads as a 'nod' of the whole forearm rather than a wrist gesture. Keep gripper closed/neutral. Good low-risk demo motion since it stays mid-range on the joint with the largest self-collision-free envelope per yam/arm.py's own comment ('joint3 is the joint that actually lifts, and is self-collision-free across its whole range from home')."
+    }
+  ],
+  "constraints_respected": "Did not touch arm/, demo/, or any CAN device. Only wrote to hwresearch/ (new dir) and coordination/status/R1.json. No arm motion attempted or possible from this agent (no hardware access).",
+  "ts": "2026-08-30T14:30:00-07:00"
+}
