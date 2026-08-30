@@ -133,6 +133,7 @@ final class ServerClient: ObservableObject {
 
     func upload(scan data: Data, named name: String) async throws -> ScanSummary {
         guard var request = request("/api/scan", method: "POST") else { throw ClientError.notConfigured }
+        request.timeoutInterval = 120        // a full sweep is megabytes over a tunnel
         request.setValue(name, forHTTPHeaderField: "X-Filename")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         let (body, response) = try await session.upload(for: request, from: data)
@@ -168,6 +169,9 @@ final class ServerClient: ObservableObject {
     func alignFromSeed(seed: SIMD3<Float>, pose: [Double]) async throws -> Registration {
         guard var request = request("/api/align_seed", method: "POST") else { throw ClientError.notConfigured }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Alignment is a search, not a lookup. The session-wide 8s timeout is
+        // sized for state polling and cancelled this before an answer existed.
+        request.timeoutInterval = 90
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "seed": [Double(seed.x), Double(seed.y), Double(seed.z)],
             "pose": pose,
