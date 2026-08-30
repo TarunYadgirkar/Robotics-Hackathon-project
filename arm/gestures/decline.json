@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "decline",
+  "source": "sim-authored",
+  "notes": "NOT taught on hardware (HARDWARE_PRESENT: no). Slow lateral shake on joint1 — a refusal, not an alarm, so the amplitude is small and the rate stays well under the 30% cap on yam.arm's own slew limit. Pose set is NOT collision-verified: run yam.environment.ArmSafetyChecker before the first hardware run.",
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {"t": 0.0, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "home"},
+    {"t": 1.4, "positions": [-12.0, 4.0, 12.0, -12.0, 4.205, 67.07, 20.0], "label": "shake left"},
+    {"t": 3.0, "positions": [18.0, 4.0, 12.0, -12.0, 4.205, 67.07, 20.0], "label": "shake right"},
+    {"t": 4.6, "positions": [-9.0, 4.0, 12.0, -12.0, 4.205, 67.07, 20.0], "label": "shake left"},
+    {"t": 6.0, "positions": [14.0, 3.0, 10.0, -10.0, 4.205, 67.07, 20.0], "label": "shake right"},
+    {"t": 7.4, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "back to home"}
+  ]
+}

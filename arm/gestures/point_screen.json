@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "point_screen",
+  "source": "sim-authored",
+  "notes": "NOT taught on hardware (HARDWARE_PRESENT: no). Orients toward a fixed pose standing in for 'the evidence screen'. The joint1 angle is a placeholder, not a measurement — the screen's direction depends on the table layout at the venue, so this pose must be re-taught in place. Pose set is NOT collision-verified: run yam.environment.ArmSafetyChecker before the first hardware run.",
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {"t": 0.0, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "home"},
+    {"t": 2.0, "positions": [55.0, 6.0, 20.0, -14.0, 4.205, 67.07, 20.0], "label": "turn toward screen"},
+    {"t": 3.4, "positions": [55.0, 10.0, 32.0, -25.0, 4.205, 67.07, 8.0], "label": "extend and point"},
+    {"t": 5.2, "positions": [55.0, 10.0, 32.0, -25.0, 4.205, 67.07, 8.0], "label": "hold on the numbers"},
+    {"t": 7.4, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "back to home"}
+  ]
+}

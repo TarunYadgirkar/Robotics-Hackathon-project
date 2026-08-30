@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "name": "task_demo",
+  "source": "sim-authored",
+  "notes": "SIM-AUTHORED, NOT A RECORDED DEMONSTRATION. FACTS.md says HARDWARE_PRESENT: no (no CANable attached), so there was no arm to teach this on and no human demo was replayed into it. It is a hand-written slow tabletop pick-and-place of a plastic bottle (approach, open, descend, grasp, lift, transfer, place, release, retreat, home), authored inside yam.arm's joint limits, that exists to give the tier=act beat something honest to animate. The arm's entire repertoire is this one trajectory — say so on stage. joint3 does the lifting and joint2 stays small, per yam.arm's self-collision notes. The gripper channel is SIM-ONLY (percent open): yam.arm.ARM_JOINTS excludes the gripper because its jaw travel is uncalibrated on this robot, so on hardware this trajectory runs as a six-joint reach with the jaws untouched. Pose set is NOT collision-verified: run yam.environment.ArmSafetyChecker before the first hardware run.",
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {"t": 0.0, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "home"},
+    {"t": 1.8, "positions": [-25.0, 8.0, 25.0, -15.0, 4.205, 67.07, 20.0], "label": "swing over pick zone"},
+    {"t": 3.8, "positions": [-25.0, 8.0, 25.0, -15.0, 4.205, 67.07, 85.0], "label": "open gripper"},
+    {"t": 5.6, "positions": [-25.0, 18.0, 8.0, -8.0, 4.205, 67.07, 85.0], "label": "descend to bottle"},
+    {"t": 7.6, "positions": [-25.0, 18.0, 8.0, -8.0, 4.205, 67.07, 30.0], "label": "close on bottle"},
+    {"t": 9.4, "positions": [-25.0, 8.0, 26.0, -14.0, 4.205, 67.07, 30.0], "label": "lift clear of table"},
+    {"t": 11.4, "positions": [22.0, 8.0, 26.0, -14.0, 4.205, 67.07, 30.0], "label": "transfer across table"},
+    {"t": 13.2, "positions": [22.0, 18.0, 9.0, -8.0, 4.205, 67.07, 30.0], "label": "descend to place"},
+    {"t": 15.2, "positions": [22.0, 18.0, 9.0, -8.0, 4.205, 67.07, 85.0], "label": "release"},
+    {"t": 17.0, "positions": [22.0, 8.0, 26.0, -14.0, 4.205, 67.07, 85.0], "label": "retreat"},
+    {"t": 19.4, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "return home"}
+  ]
+}

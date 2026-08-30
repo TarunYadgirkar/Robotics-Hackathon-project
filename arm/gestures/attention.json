@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "name": "attention",
+  "source": "sim-authored",
+  "notes": "NOT taught on hardware. FACTS.md says HARDWARE_PRESENT: no (no CANable attached), so these angles were authored by hand for the simulator against yam.arm's joint limits and never sent to a motor. Lifting is done with joint3, which yam.arm records as self-collision-free across its range from home; joint2 stays near zero because from a folded home it moves the tip DOWN and self-collides past ~+105 deg. Pose set is NOT collision-verified: run yam.environment.ArmSafetyChecker before the first hardware run.",
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "units": "deg (joint1-joint6), percent_open (gripper)",
+  "waypoints": [
+    {"t": 0.0, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "home"},
+    {"t": 1.2, "positions": [2.854, 6.0, 25.0, -18.0, 4.205, 67.07, 20.0], "label": "raise"},
+    {"t": 2.2, "positions": [2.854, 4.0, 18.0, -14.0, 4.205, 67.07, 20.0], "label": "settle"},
+    {"t": 3.4, "positions": [2.854, 0.0, 0.0, -5.191, 4.205, 67.07, 20.0], "label": "back to home"}
+  ]
+}

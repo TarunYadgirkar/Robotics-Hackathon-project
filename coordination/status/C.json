@@ -1,12 +1,36 @@
 {
   "agent": "C",
-  "state": "running",
-  "outputs": [],
+  "state": "done",
+  "outputs": [
+    "arm/arm_io.py",
+    "arm/facts.py",
+    "arm/model.py",
+    "arm/motion.py",
+    "arm/safety.py",
+    "arm/sim_backend.py",
+    "arm/hw_backend.py",
+    "arm/__init__.py",
+    "arm/smoke.py",
+    "arm/gestures/attention.json",
+    "arm/gestures/decline.json",
+    "arm/gestures/point_screen.json",
+    "arm/gestures/task_demo.json",
+    "arm/sim_out/home.gif",
+    "arm/sim_out/home.png",
+    "arm/sim_out/attention.gif",
+    "arm/sim_out/attention.png",
+    "arm/sim_out/decline.gif",
+    "arm/sim_out/decline.png",
+    "arm/sim_out/point_screen.gif",
+    "arm/sim_out/point_screen.png",
+    "arm/sim_out/task_demo.gif",
+    "arm/sim_out/task_demo.png"
+  ],
   "smoke_test": {
     "cmd": ".venv/bin/python arm/smoke.py",
-    "exit_code": null,
-    "output_tail": ""
+    "exit_code": 0,
+    "output_tail": "[8] YAM hardware branch stays out of the way while HARDWARE_PRESENT is no | PASS arm.hw_backend imports with no python-can / gs_usb / yam deps present | PASS hardware pre-flight checklist is populated (self-collision + keep-alive + gripper) | PASS teach() refuses without hardware | PASS every authored pose keeps joint2 below 45.0 deg (self-collision ~105.0 deg) | PASS gesture trajectories declare themselves sim-authored | [9] sim artifacts | PASS home.gif/png attention.gif/png decline.gif/png point_screen.gif/png task_demo.gif/png rendered | === all checks passed === (36 checks, ~25s wall, exit 0)"
   },
-  "notes": "started; FACTS.md read: HARDWARE_PRESENT=no, HARDWARE_DEVICE_PATH=none, LEROBOT_IMPORT=fail. Building sim fallback per prompt with the hardware branch stubbed behind the FACTS flag. matplotlib 3.11.1 / numpy 1.26.4 / pillow 12.3.0 already present in .venv, 0 installs needed.",
-  "ts": "2026-08-30T12:33:00-07:00"
+  "notes": "SIM FALLBACK — disclose in the build card and say it out loud on stage. FACTS.md says HARDWARE_PRESENT: no, so arm_io selects the simulator: nothing in this module has moved a servo, and no gesture was taught on a robot. All four trajectory JSONs carry source=\"sim-authored\" plus a notes field saying so; task_demo is a hand-written slow tabletop pick-and-place, NOT a recorded demonstration. The arm's entire repertoire is that one trajectory.\n\nContract: `from arm import arm_io` with REPO_ROOT on sys.path -> home(speed=1.0), replay(traj_json_path, speed=1.0), gesture(name) for attention|decline|point_screen. Extras for F: arm_io.describe() returns the disclosure dict (backend, simulated, FACTS flag, cap, control_hz, gesture sources); arm_io.TASK_DEMO_PATH; arm_io.recover_home(). HARDWARE_PRESENT is read from FACTS.md at import through arm/facts.py — there is no constant in arm/ that can drift from it, and 'uncertain' resolves to not-present on purpose.\n\nORCHESTRATOR REDIRECT APPLIED: hardware branch is stubbed against the in-repo YAM driver (yam/arm.py YamArm), not lerobot/SO-101. yam is imported INSIDE hw_backend.connect(), never at module scope, so `import arm.arm_io` works with no python-can/gs_usb installed (smoke check [8] asserts this). arm/model.py mirrors yam.arm.ARM_JOINTS limits rad->deg and derives the velocity cap from yam.arm.SafetyLimits.max_step_per_tick (0.02 rad) at the driver's 100 Hz tick = 114.6 deg/s, capped at 30% = 34.4 deg/s; hw_backend.verify_against_yam() re-checks that mirror against the live module at connect time and refuses to run if it has drifted. HOME_POSE_DEG is scripts/plan_and_run.py's measured resting pose (joint2/joint3 clamped up to their 0.0 bound). Channel vector is 7 wide: joint1-joint6 in degrees plus a SIM-ONLY gripper in percent-open, because yam.arm.ARM_JOINTS deliberately excludes the gripper (uncalibrated jaw travel) — on hardware task_demo runs as a six-joint reach with the jaws untouched.\n\nSafety, real code shared by both backends (not sim-only): motion.enforce_velocity_cap() slows any over-fast segment by TIME DILATION, never position clipping, and runs on every motion including home; motion.load_trajectory() rejects out-of-limit waypoints (SoftLimitError); KeyboardInterrupt during a motion calls backend hold() and latches a freeze — it does NOT home, and every further motion call raises ArmFrozen until arm_io.recover_home() gets an explicit 'h' keypress, which then homes at 25% speed. A non-interactive stdin counts as no consent. Smoke test exercises all of that (checks [5]-[7]).\n\nNOT VERIFIED, needs a human before any hardware run (also listed in hw_backend.preflight_checklist()): self-collision. yam/arm.py records that ~10% of in-limit poses self-collide and that the driver does not check; mujoco is not installed and the i2rt URDF is not on this machine, so yam.environment.ArmSafetyChecker could not be run. Poses were authored conservatively instead — joint3 does the lifting, joint2 stays <=18 deg against a ~105 deg self-collision threshold, and smoke asserts a 45 deg ceiling. Second hardware hazard already written into the checklist: yam.arm's 0xD comms-lost latch needs a keep-alive stream between motions, and the demo waits on human keypresses between beats.\n\nFor F: sim runs in real time by default (ARM_SIM_REALTIME=1) so beats are timeable — attention 3.4s, decline 7.4s, point_screen 7.4s, task_demo 19.4s at speed=1.0 (39s at speed=0.5). Set ARM_SIM_REALTIME=0 to make it instant, ARM_SIM_RENDER=0 to skip the ~2s/motion gif render during the live demo (the stills in arm/sim_out/ are already rendered for the screen). Rendering during a beat is the only thing that will make the arm feel laggy.\n\nFor the orchestrator: arm/sim_out/ is 4.2 MB of regenerable gif/png. It is NOT gitignored and .gitignore is outside my write scope — decide whether to ignore it or commit the stills only before the repo goes public.",
+  "ts": "2026-08-30T12:46:00-07:00"
 }
