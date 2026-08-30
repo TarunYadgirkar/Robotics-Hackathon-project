@@ -1,0 +1,56 @@
+task_id                                silhouette   perm_p  n_clips  n_fam  n_cam  fam_conf  cam_conf      method
+garment-inside-out                         0.1524   0.1130        9      5      4     False     False   landmarks
+fabric-layering                            0.1244   0.1090        9      4      4     False     False   landmarks
+garment-carton-packing                     0.1221   0.1150        9      5      4     False     False   landmarks
+metal-grinding                             0.1076   0.0320        9      2      2      True      True   landmarks
+bottle-surface-buffing                     0.0919   0.1090        9      1      1      True      True   landmarks
+component-alignment-sticker-application     0.0918   0.1180        9      1      1      True      True   landmarks
+water-filtration-bottle-filling            0.0871   0.1090        9      1      1      True      True   landmarks
+cnc-machine-operation                      0.0803   0.1150        9      2      2     False     False   landmarks
+garment-zip-attachment                     0.0769   0.0100        9      2      2      True      True   landmarks
+garment-packing-general                    0.0752   0.1180        9      3      3     False     False   landmarks
+loop-tape-preparation                      0.0714   0.1290        8      3      3     False     False   landmarks
+garment-loop-attachment                    0.0652   0.1130        9      4      4     False     False   landmarks
+garment-iron-press                         0.0625   0.1190        8      6      5     False     False   landmarks
+axle-shaft-cutting                         0.0619   0.1690        6      1      1      True      True   landmarks
+garment-folding-cardboard-insert           0.0586   0.1090        9      6      6     False     False   landmarks
+plastic-moulding-machine-operation         0.0573   0.1190        8      3      2     False      True   landmarks
+garment-stitching-overlock                 0.0569   0.0370        8      2      2      True      True   landmarks
+garment-back-panel-attachment              0.0559   0.0100        9      5      4     False      True   landmarks
+filter-tube-assembly                       0.0533   0.1130        9      1      1      True      True   landmarks
+garment-folding-general                    0.0525   0.0930        9      3      2     False     False   landmarks
+garment-quality-checking                   0.0501   0.1130        9      4      4     False     False   landmarks
+metal-hole-cleaning                        0.0482   0.1190        8      1      1      True      True   landmarks
+buttonhole-stitching                       0.0481   0.1130        9      2      1     False      True   landmarks
+garment-pair-folding                       0.0472   0.1180        9      3      3     False     False   landmarks
+belly-band-assembly                        0.0450   0.1130        9      5      3     False      True   landmarks
+garment-belly-band-wrapping                0.0447   0.1130        9      4      3     False     False   landmarks
+garment-label-attachment                   0.0446   0.0270        9      3      2      True      True   landmarks
+binding-pre-fold-stitching                 0.0425   0.0220        9      3      2      True     False   landmarks
+panel-fitting-placement                    0.0410   0.1030        9      3      3     False     False   landmarks
+garment-button-attachment                  0.0352   0.1130        9      4      4     False     False   landmarks
+register-ring-binding                      0.0315   0.1180        9      2      2     False     False   landmarks
+milling-machine-operation                  0.0315   0.1130        9      2      1     False      True   landmarks
+electrical-wiring-assembly                 0.0302   0.0180        9      2      1     False      True   landmarks
+zip-tape-bartacking                        0.0268   0.0250        9      2      1     False      True   landmarks
+garment-safety-sticker                     0.0268   0.1090        9      3      3     False     False   landmarks
+drilling                                   0.0260   0.1500        6      2      2     False     False   landmarks
+garment-stitching-general                  0.0228   0.1560        7      3      3      True      True   landmarks
+cfu-pre-assembly                           0.0208   0.1290        8      2      1      True      True   landmarks
+garment-edge-hemming                       0.0206   0.0280        8      1      1      True      True   landmarks
+garment-hanger-place                       0.0197   0.1560        7      4      4     False     False   landmarks
+notebook-cover-assembly                    0.0195   0.1690        6      2      2     False     False   landmarks
+garment-tag-attachment                     0.0191   0.1180        8      2      2     False     False   landmarks
+oil-seal-pressing                          0.0169   0.0160        9      1      1      True      True   landmarks
+
+excluded (7):
+  bottle-cleaning: detection_rate 0.036 < 0.5
+  fabric-cutting-machine: detection_rate 0.482 < 0.5
+  fabric-cutting-scissor: detection_rate 0.453 < 0.5
+  lathe-machine-operation: detection_rate 0.348 < 0.5
+  plaster-ceiling-tile: detection_rate 0.168 < 0.5
+  processing-fabric-cut: detection_rate 0.391 < 0.5
+  processing-fabric-spread: detection_rate 0.322 < 0.5
+
+PLAN_v2 clean-list cross-check (metadata heuristic vs computed clustering):
+  DISAGREEMENT: plan-only=['belly-band-assembly', 'binding-pre-fold-stitching', 'fabric-cutting-machine', 'garment-back-panel-attachment', 'garment-stitching-overlock', 'processing-fabric-cut', 'processing-fabric-spread'] computed-only=['cnc-machine-operation', 'drilling', 'garment-hanger-place', 'garment-tag-attachment', 'notebook-cover-assembly', 'panel-fitting-placement', 'register-ring-binding']

@@ -1,0 +1,128 @@
+{
+  "axle-shaft-cutting": {
+    "camera_confounded": true,
+    "cameras": [
+      "cam_qrwyghylu4gbo",
+      "cam_qrwyghylu4gbo",
+      "cam_qrwyghylu4gbo",
+      "cam_qrwyghylu4gbo",
+      "cam_qrwyghylu4gbo",
+      "cam_qrwyghylu4gbo"
+    ],
+    "detection_rate": 0.8703,
+    "exclude_reason": null,
+    "excluded": false,
+    "families": [
+      "rep_uayjj6oj2h3gi",
+      "rep_uayjj6oj2h3gi",
+      "rep_uayjj6oj2h3gi",
+      "rep_uayjj6oj2h3gi",
+      "rep_uayjj6oj2h3gi",
+      "rep_uayjj6oj2h3gi"
+    ],
+    "family_confounded": true,
+    "labels": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "method": "landmarks",
+    "n_cameras": 1,
+    "n_clips": 6,
+    "n_families": 1,
+    "perm_p": 0.169,
+    "silhouette_k2": 0.0619
+  },
+  "belly-band-assembly": {
+    "camera_confounded": true,
+    "cameras": [
+      "cam_kmuhzk434asyw",
+      "cam_kmuhzk434asyw",
+      "cam_kmuhzk434asyw",
+      "cam_l4kqqve3nfhac",
+      "cam_t6qh4d3oxiu7u",
+      "cam_t6qh4d3oxiu7u",
+      "cam_kmuhzk434asyw",
+      "cam_kmuhzk434asyw",
+      "cam_kmuhzk434asyw"
+    ],
+    "detection_rate": 0.8863,
+    "exclude_reason": null,
+    "excluded": false,
+    "families": [
+      "rep_ww5gsakpd6y24",
+      "rep_ww5gsakpd6y24",
+      "rep_ww5gsakpd6y24",
+      "rep_lyn6kil2bkyms",
+      "rep_sbr2ukuvh4scy",
+      "rep_nmni6pdnw6vz6",
+      "rep_ww5gsakpd6y24",
+      "rep_ytyifkgdijzcl",
+      "rep_ytyifkgdijzcl"
+    ],
+    "family_confounded": false,
+    "labels": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "method": "landmarks",
+    "n_cameras": 3,
+    "n_clips": 9,
+    "n_families": 5,
+    "perm_p": 0.113,
+    "silhouette_k2": 0.045
+  },
+  "garment-iron-press": {
+    "camera_confounded": false,
+    "cameras": [
+      "cam_o2gi7s53iyxoy",
+      "cam_o2gi7s53iyxoy",
+      "cam_o2gi7s53iyxoy",
+      "cam_tftyx76cenhos",
+      "cam_4c54ikoyyp7e6",
+      "cam_l4kqqve3nfhac",
+      "cam_l4kqqve3nfhac",
+      "cam_kmuhzk434asyw"
+    ],
+    "detection_rate": 0.686,
+    "exclude_reason": null,
+    "excluded": false,
+    "families": [
+      "rep_o4bx6feigxkxe",
+      "rep_o4bx6feigxkxe",
+      "rep_o4bx6feigxkxe",
+      "rep_wpmnqhqo4rxxy",
+      "rep_75oaapafyqi7s",
+      "rep_k5vozih3ee7vc",
+      "rep_qkcqbomakn25y",
+      "rep_iudp3gg7ixecs"
+    ],
+    "family_confounded": false,
+    "labels": [
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0
+    ],
+    "method": "landmarks",
+    "n_cameras": 5,
+    "n_clips": 8,
+    "n_families": 6,
+    "perm_p": 0.119,
+    "silhouette_k2": 0.0625
+  }
+}

@@ -1,0 +1,9 @@
+task_id                                silhouette   perm_p  n_clips  n_fam  n_cam  fam_conf  cam_conf      method
+garment-iron-press                         0.0625   0.1190        8      6      5     False     False   landmarks
+axle-shaft-cutting                         0.0619   0.1690        6      1      1      True      True   landmarks
+belly-band-assembly                        0.0450   0.1130        9      5      3     False      True   landmarks
+
+excluded (0):
+
+PLAN_v2 clean-list cross-check (metadata heuristic vs computed clustering):
+  SKIPPED (partial run over 3 tasks, not all 50)
