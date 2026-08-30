@@ -108,6 +108,17 @@ TEMPLATES = {
     # 'abstain_restate' reuses the abstain tier's query. No new slot is
     # required from brain/decide.py. Selected via --template, never inferred.
     "ask_hold": "Holding. {n_clips} demonstrations remain unexecuted.",
+    # Converse mode only. The act tier is deliberately SILENT in the scripted
+    # beats (BEAT 1's whole point), but in free conversation silence reads as a
+    # crash, so converse speaks a confirmation before it moves. Reuses the act
+    # tier's existing task/n_clips slots.
+    "act_confirm": "I know {task}. {n_clips} demonstrations. Doing it.",
+    # No slots: spoken when the capture was empty or unintelligible, so that
+    # every human utterance gets a spoken response and never silence.
+    "not_understood": "I did not catch that. Name a task.",
+    # Golden path opener. Corpus size is computed, not written in.
+    "greeting": ("I have watched {hours} hours of human work across {n_tasks} tasks. "
+                 "Ask me to do something."),
     "abstain_restate": (
         "I have zero demonstrations of {query}. I will not attempt it."
     ),
@@ -206,6 +217,22 @@ def build_elevenlabs_request(text, key):
     return urllib.request.Request(url, data=body, headers=headers, method="POST")
 
 
+def synthesize_to_file(text, out_path):
+    """Render text to an mp3 on disk without playing it. Used to pre-synthesize
+    the scripted backup's audio while the network is good, so that mode needs no
+    network at all on stage."""
+    key = get_api_key()
+    if not key:
+        raise RuntimeError("ELEVENLABS_API_KEY not available; cannot pre-synthesize")
+    req = build_elevenlabs_request(text, key)
+    t0 = time.time()
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        audio_bytes = resp.read()
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_path).write_bytes(audio_bytes)
+    return time.time() - t0
+
+
 def speak_elevenlabs(text, key):
     req = build_elevenlabs_request(text, key)
     t0 = time.time()
@@ -247,16 +274,24 @@ def speak(text):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("decision_json", help="path to a decision JSON from brain/decide.py")
+    ap.add_argument("decision_json", nargs="?",
+                     help="path to a decision JSON from brain/decide.py")
     ap.add_argument("--no-audio", action="store_true",
                      help="render + print text only, skip TTS playback (used by smoke tests)")
+    ap.add_argument("--say", help="speak this exact string instead of rendering a template "
+                                   "(used for LLM-phrased lines; TTS + printing are identical)")
     ap.add_argument("--template", choices=sorted(TEMPLATES),
                      help="force a template instead of inferring it from the tier "
                           "(used by the human-in-the-loop resolution beats)")
     args = ap.parse_args()
 
-    decision = json.loads(Path(args.decision_json).read_text())
-    text, template_name = render(decision, template_name=args.template)
+    if args.say is not None:
+        text, template_name = args.say.strip(), "llm-phrased"
+    else:
+        if not args.decision_json:
+            ap.error("decision_json is required unless --say is given")
+        decision = json.loads(Path(args.decision_json).read_text())
+        text, template_name = render(decision, template_name=args.template)
 
     # Frozen contract: always print the exact text spoken (empty for act-silent).
     print(text)
@@ -265,7 +300,7 @@ def main():
         return 0
 
     if not text:
-        log(f"[speak] tier={decision.get('tier')} -> act-silent, no speech synthesized")
+        log(f"[speak] template={template_name} -> act-silent, no speech synthesized")
         return 0
 
     engine, latency = speak(text)

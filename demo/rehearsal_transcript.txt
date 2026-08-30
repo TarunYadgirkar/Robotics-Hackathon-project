@@ -1,31 +1,7 @@
-beat1 query heard: 'garment iron press'
-beat1 decision: tier=act matched=garment-iron-press slots={"task": "Garment Iron Press", "n_clips": 8}
-arm replay task_demo: SKIPPED (--sim-arm)
-beat1 spoken (0.03s): ''
-beat1 panel: /Users/tarunyadgirkar/TarunsCode/hackathons/Robotics-Hackathon-project/demo/panels/beat1.png ok=True
-beat2 query heard: 'garment inside out'
-beat2 decision: tier=ask matched=garment-inside-out slots={"task": "Garment Inside Out", "n_clips": 9, "cluster_maj_n": 8, "cluster_min_n": 1, "silhouette": 0.15, "perm_p": 0.11}
-arm gesture attention: SKIPPED (--sim-arm)
-beat2 spoken (0.03s): 'I have 9 demonstrations of Garment Inside Out. 8 do it one way. 1 does something different - silhouette 0.15, though with 9 clips I cannot rule out chance: p equals 0.11. Should I follow the majority, or does the outlier matter?'
-beat2 panel: /Users/tarunyadgirkar/TarunsCode/hackathons/Robotics-Hackathon-project/demo/panels/beat2.png ok=True
-beat2-reply query heard: 'mmhrgh'
-beat2 reply 'mmhrgh' -> unrecognized (matched [])
-beat2-reply1 query heard: 'stop'
-beat2 reply 'stop' -> negative (matched ['stop'])
-beat2-hold spoken (0.03s): 'Holding. 9 demonstrations remain unexecuted.'
-beat2b-reply query heard: 'go on'
-beat2b reply 'go on' -> affirmative (matched ['go'])
-arm replay task_demo: SKIPPED (--sim-arm)
-beat3 query heard: 'do a bottle flip'
-beat3 decision: tier=abstain matched=None slots={"query": "bottle flip", "hours": 35.34, "n_tasks": 50, "near1": "Bottle Cleaning", "near2": "Bottle Surface Buffing"}
-arm gesture decline: SKIPPED (--sim-arm)
-beat3 spoken (0.03s): 'I have watched 35.34 hours of human work across 50 tasks. None of them is bottle flip. The closest things I know are Bottle Cleaning and Bottle Surface Buffing. I have zero demonstrations of this. If you show me, I will watch.'
-beat3 panel: /Users/tarunyadgirkar/TarunsCode/hackathons/Robotics-Hackathon-project/demo/panels/beat3.png ok=True
-beat3-reply query heard: 'go on'
-beat3 reply 'go on' -> affirmative (matched ['go'])
-beat3-restate spoken (0.03s): 'I have zero demonstrations of bottle flip. I will not attempt it.'
-beat4 ingest (synthetic): 3 takes, live_stat_line='peak hand speed 0.0 normalized-units/s, 0% of frames tracked across 3 take(s)'
-beat4 decision: tier=abstain matched=None slots={"query": "bottle flip", "hours": 35.34, "n_tasks": 50, "near1": "Bottle Cleaning", "near2": "Bottle Surface Buffing", "n_live_demos": 3, "n_live_demonstrators": 1, "live_stat_line": "peak hand speed 0.0 normalized-units/s, 0% of frames tracked across 3 take(s)"}
-arm gesture point_screen: SKIPPED (--sim-arm)
-beat4 spoken (0.03s): 'I watched your 3 attempts. I now have data from 1 demonstrator. I am still not attempting it: my control is trajectory replay, and this task needs in-flight release timing I cannot verify. What I can tell you is what I measured: peak hand speed 0.0 normalized-units/s, 0% of frames tracked across 3 take(s).'
-beat4 panel: /Users/tarunyadgirkar/TarunsCode/hackathons/Robotics-Hackathon-project/demo/panels/beat4.png ok=True
+arm home: complete in 0.6s
+arm replay wake: complete in 20.6s
+scripted greeting spoken [cached]: 'I have watched 35.34 hours of human work across 50 tasks. Ask me to do something.'
+arm replay decline: complete in 7.4s
+scripted refusal spoken [cached]: 'I have watched 35.34 hours of human work across 50 tasks. None of them is fold a piece of paper. The closest things I know are Binding Pre Fold Stitching and Axle Shaft Cutting. I have zero demonstrations of this. How do I do it?'
+arm replay attempt: complete in 10.6s
+scripted close spoken [cached]: 'I heard your 23 words of instruction and tried. I still have 0 demonstrations of fold a piece of paper - one attempt on instruction is not knowledge. Watch me learn faster if you show me.'

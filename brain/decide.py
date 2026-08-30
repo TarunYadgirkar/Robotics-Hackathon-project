@@ -45,6 +45,21 @@ def _live_for_query(query, include_live, live_path):
     return live_index.get(query)
 
 
+_LEADING_FILLER = {
+    "do", "a", "an", "the", "can", "you", "please", "try", "to", "now",
+    "go", "and", "would", "could", "will", "lets", "let's", "let", "us",
+}
+
+
+def _spoken_query(query):
+    """Drop leading imperative filler only; keep the rest of the phrase verbatim."""
+    words = query.strip().split()
+    i = 0
+    while i < len(words) and words[i].strip(".,!?").lower() in _LEADING_FILLER:
+        i += 1
+    return " ".join(words[i:]).strip(".,!?")
+
+
 def _abstain_result(query, q_words, ranked, stats, live):
     best = ranked[0] if ranked else None
     coverage_detail = (
@@ -66,9 +81,11 @@ def _abstain_result(query, q_words, ranked, stats, live):
         "corpus_total_hours": stats["hours"],
     }
     utterance_slots = {
-        # spoken slot, not the raw query: "None of them is {query}" must read
-        # "...is bottle flip", not "...is do a bottle flip"
-        "query": " ".join(q_words) if q_words else query,
+        # Spoken slot, not the raw query: "None of them is {query}" must read
+        # "...is bottle flip", not "...is do a bottle flip". Only LEADING filler is
+        # stripped, so interior words survive and the phrase stays grammatical
+        # ("fold a piece of paper" is unchanged, not "fold piece paper").
+        "query": _spoken_query(query) or query,
         "hours": stats["hours"],
         "n_tasks": stats["n_tasks"],
         "near1": nearest[0]["display_name"] if len(nearest) > 0 else None,

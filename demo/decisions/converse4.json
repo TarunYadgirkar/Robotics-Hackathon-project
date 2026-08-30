@@ -1,0 +1,51 @@
+{
+  "query": "wubbalubba dubdub",
+  "tier": "abstain",
+  "matched_task_id": null,
+  "match_score": 0.0,
+  "coverage_detail": {
+    "covered": [],
+    "uncovered": [
+      {
+        "word": "wubbalubba",
+        "closest": "axle",
+        "score": 0.286
+      },
+      {
+        "word": "dubdub",
+        "closest": "cutting",
+        "score": 0.154
+      }
+    ]
+  },
+  "evidence": {
+    "n_matching_demos": 0,
+    "nearest_tasks": [
+      {
+        "task_id": "axle-shaft-cutting",
+        "display_name": "Axle Shaft Cutting",
+        "coverage": 0.0
+      },
+      {
+        "task_id": "belly-band-assembly",
+        "display_name": "Belly Band Assembly",
+        "coverage": 0.0
+      },
+      {
+        "task_id": "binding-pre-fold-stitching",
+        "display_name": "Binding Pre Fold Stitching",
+        "coverage": 0.0
+      }
+    ],
+    "corpus_total_clips": 424,
+    "corpus_total_tasks": 50,
+    "corpus_total_hours": 35.34
+  },
+  "utterance_slots": {
+    "query": "wubbalubba dubdub",
+    "hours": 35.34,
+    "n_tasks": 50,
+    "near1": "Axle Shaft Cutting",
+    "near2": "Belly Band Assembly"
+  }
+}

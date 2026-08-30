@@ -1,0 +1,14 @@
+{
+  "query": "",
+  "tier": "abstain",
+  "matched_task_id": null,
+  "match_score": 0.0,
+  "coverage_detail": {
+    "covered": [],
+    "uncovered": []
+  },
+  "evidence": {
+    "n_matching_demos": 0
+  },
+  "utterance_slots": {}
+}
