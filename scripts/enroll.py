@@ -11,6 +11,7 @@ The viewer opens at http://127.0.0.1:8420/.
 """
 
 import argparse
+import glob
 import os
 import sys
 import threading
@@ -63,6 +64,8 @@ def main() -> None:
                         help="0.0.0.0 lets the phone that does the LiDAR scan open the viewer; "
                              "use 127.0.0.1 to keep it on this machine only")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--fresh-scan", action="store_true",
+                        help="ignore any scan already on disk instead of adopting the newest")
     parser.add_argument("--linger", type=float, default=180.0,
                         help="seconds to keep the viewer up after finishing, so the phone sees the result")
     parser.add_argument("--tunnel", action="store_true",
@@ -80,6 +83,22 @@ def main() -> None:
 
     server = VizServer(port=args.port, host=args.host)
     server.static_payloads["meshes"] = export_arm_meshes(kinematics)
+
+    # Adopt the most recent scan on disk. A scan survives a server restart as a
+    # file, but used to live only in the previous process's memory, so the phone
+    # showed nothing and there was no way to erase from it or align it.
+    existing = sorted(glob.glob("phone_scan_*.ply") + glob.glob("*.ply"), key=os.path.getmtime)
+    if existing and not args.fresh_scan:
+        try:
+            from yam.lidar import load_point_cloud
+
+            points = load_point_cloud(existing[-1])
+            step = max(1, len(points) // 40000)
+            server.scan_points = points[::step]
+            server.uploads.append(os.path.abspath(existing[-1]))
+            print(f"  adopted existing scan {existing[-1]} ({len(points):,} points)")
+        except Exception as error:
+            print(f"  could not read {existing[-1]}: {error}")
     url = server.start()
     addresses = server.urls()
 
