@@ -89,13 +89,29 @@ struct ScanView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 10) {
-            Button {
-                Haptics.tap()
-                scanner.reset()
-                pairs.removeAll()
-                show("scan cleared")
-            } label: { label("Clear", "trash") }
+        VStack(spacing: 10) {
+            // Modes on their own row. Four controls plus an expanding primary
+            // button do not fit a phone-width line, and the two that change what
+            // a tap does deserve to be legible rather than squeezed.
+            HStack(spacing: 8) {
+                modeButton(title: "Align", icon: "target", active: aligning) {
+                    aligning.toggle()
+                    if aligning { erasing = false }
+                    show(aligning ? "tap the ARM itself — roughly is fine" : "align cancelled")
+                }
+                modeButton(title: "Erase", icon: "eraser", active: erasing) {
+                    erasing.toggle()
+                    if erasing { aligning = false }
+                    show(erasing ? "tap anything that should not be in the map" : "erase off")
+                }
+                modeButton(title: "Pair", icon: "link", active: !aligning && !erasing) {
+                    aligning = false; erasing = false
+                    show("tap the spot matching each Reference point")
+                }
+                modeButton(title: "Clear", icon: "trash", active: false) {
+                    scanner.reset(); pairs.removeAll(); show("scan cleared")
+                }
+            }
 
             Button {
                 Haptics.tap()
@@ -112,30 +128,23 @@ struct ScanView: View {
             }
             .disabled(uploading || scanner.vertexCount == 0)
             .opacity(scanner.vertexCount == 0 ? 0.45 : 1)
+        }
+    }
 
-            Button {
-                Haptics.tap()
-                aligning.toggle()
-                if aligning { erasing = false }
-                show(aligning ? "tap the ARM itself — roughly is fine" : "align cancelled")
-            } label: {
-                label(aligning ? "Aiming" : "Align", "target")
-                    .overlay(RoundedRectangle(cornerRadius: 14)
-                        .stroke(aligning ? Theme.red : .clear, lineWidth: 2))
+    private func modeButton(title: String, icon: String, active: Bool,
+                            action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 15))
+                Text(title).font(.system(size: 11, weight: .medium))
             }
-
-            Button {
-                Haptics.tap()
-                erasing.toggle()
-                if erasing { aligning = false }
-                show(erasing
-                     ? "tap anything that should not be in the map"
-                     : "back to pairing points")
-            } label: {
-                label(erasing ? "Erasing" : "Erase", "eraser")
-                    .overlay(RoundedRectangle(cornerRadius: 14)
-                        .stroke(erasing ? Theme.red : .clear, lineWidth: 2))
-            }
+            .frame(maxWidth: .infinity).padding(.vertical, 10)
+            .background(active ? Theme.red : Color.white.opacity(0.92),
+                        in: RoundedRectangle(cornerRadius: 14))
+            .foregroundStyle(active ? .white : Theme.ink)
         }
     }
 
