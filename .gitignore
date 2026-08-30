@@ -5,3 +5,6 @@ dist/
 __pycache__/
 *.pyc
 .DS_Store
+.playwright-mcp/
+enrollment.json
+*.npz

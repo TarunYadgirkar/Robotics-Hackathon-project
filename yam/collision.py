@@ -131,6 +131,13 @@ class CollisionChecker:
         centers, radii = self.kinematics.collision_spheres(q, self.links)
         return self.world.is_free(centers, radii)
 
+    def explain(self, q: Sequence[float]) -> List[str]:
+        gap = self.clearance(q)
+        if gap > self.world.margin:
+            return []
+        scope = "/".join(self.links) if self.links else "whole arm"
+        return [f"sphere model ({scope}): {gap * 1000:+.1f}mm clearance, needs {self.world.margin * 1000:.0f}mm"]
+
     def segment_is_free(self, start: Sequence[float], end: Sequence[float], resolution: float = 0.05) -> bool:
         """Check a straight line in joint space, densely enough that nothing is stepped over."""
         start, end = np.asarray(start, dtype=float), np.asarray(end, dtype=float)

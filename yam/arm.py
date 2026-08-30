@@ -64,6 +64,18 @@ ARM_JOINTS: List[JointConfig] = [
 # fixed limit the way the arm joints do -- i2rt calibrates it per robot. Until that
 # calibration exists here, these bounds only cover the observed range and the gripper is
 # excluded from motion commands; a guessed limit would move it on the first clamp.
+# Known hazards, measured on this arm rather than inferred:
+#
+# * joint2 is the "raise the arm" trap. From a folded home pose it moves the tip
+#   DOWN (0.165 -> 0.012 m) and self-collides against the base past roughly
+#   +105 deg. joint3 is the joint that actually lifts, and is self-collision-free
+#   across its whole range from home.
+# * Motors can sit marginally outside these limits at rest -- j2/j3 read 0.0115 deg
+#   below their 0.0 lower bound -- so the first clamped command nudges them.
+# * Being inside the joint limits does NOT mean a pose is safe: about 10% of
+#   random in-limit poses self-collide. Nothing in this module checks that; use
+#   yam.environment.ArmSafetyChecker.
+
 GRIPPER_JOINT = JointConfig("gripper", 0x07, "DM4310", -3.2, 3.2, kp=5.0, kd=0.5, max_torque=3.0)
 
 

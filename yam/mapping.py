@@ -1,0 +1,74 @@
+"""Assemble the planning map from everything we know about the workcell.
+
+Three sources, in increasing order of richness:
+
+* **Touched obstacles** -- boxes fitted to points the arm physically reached.
+  Sparse, but expressed in the robot's own frame with no registration step.
+* **A LiDAR scan** -- dense geometry for whatever the arm cannot conveniently
+  touch, registered into the base frame using touched reference points.
+* **A table slab** -- the fallback when there is no scan yet, described as a
+  finite box rather than a half-space, because this arm overhangs its table edge.
+
+Everything lands in one voxel grid, so the planner does not care which source a
+given obstacle came from.
+"""
+
+from typing import Optional, Sequence
+
+import numpy as np
+
+from yam.enrollment import EnrollmentSession
+from yam.lidar import crop_to_workspace, filter_robot_from_scan
+from yam.voxel_map import VoxelMap
+
+DEFAULT_BOUNDS_MIN = (-0.95, -0.95, -0.75)
+DEFAULT_BOUNDS_MAX = (0.95, 0.95, 1.00)
+
+
+def build_map(
+    session: Optional[EnrollmentSession] = None,
+    scan_points: Optional[np.ndarray] = None,
+    table: Optional[dict] = None,
+    resolution: float = 0.02,
+    bounds_min: Sequence[float] = DEFAULT_BOUNDS_MIN,
+    bounds_max: Sequence[float] = DEFAULT_BOUNDS_MAX,
+    kinematics=None,
+    scan_pose: Optional[Sequence[float]] = None,
+) -> VoxelMap:
+    voxel_map = VoxelMap.from_bounds(bounds_min, bounds_max, resolution)
+
+    if table is not None:
+        voxel_map.add_box(table["min"], table["max"])
+
+    if session is not None:
+        for box in session.to_world_boxes():
+            voxel_map.add_box(box.minimum, box.maximum)
+
+    if scan_points is not None and len(scan_points):
+        points = crop_to_workspace(np.asarray(scan_points, dtype=float))
+        if kinematics is not None and scan_pose is not None:
+            points = filter_robot_from_scan(points, kinematics, scan_pose)
+        voxel_map.add_points(points)
+
+    # Even after point-level filtering, stray returns land on the arm: the scan
+    # pose is only known to the accuracy of FK, and LiDAR noise smears surfaces.
+    # Any voxel the arm provably occupies is cleared, or the arm is walled in
+    # by an image of itself.
+    if kinematics is not None and scan_pose is not None:
+        centers, radii = kinematics.collision_spheres(scan_pose)
+        voxel_map.carve_spheres(centers, radii, padding=0.03)
+
+    voxel_map.compute_distance_field()
+    return voxel_map
+
+
+def table_slab(surface_z: float, edge_x: float, extent: float = 0.95, thickness: float = 0.04) -> dict:
+    """A table the arm is mounted at the edge of.
+
+    `edge_x` is where the tabletop stops; beyond it there is nothing, and the arm
+    may legitimately swing below `surface_z`.
+    """
+    return {
+        "min": [-extent, -extent, surface_z - thickness],
+        "max": [edge_x, extent, surface_z],
+    }
