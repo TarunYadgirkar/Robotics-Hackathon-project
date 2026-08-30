@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  BIMANUAL, STATE_COLORS, STATE_NAMES, hours, loadCorpus, pct, taskStats,
-  type Corpus,
+  BIMANUAL, MEDIA_BASE, STATE_COLORS, STATE_NAMES, hours, loadCorpus, mediaReachable,
+  pct, taskStats, type Corpus,
 } from './data'
 import Wall, { type Hit } from './Wall'
 import Player from './Player'
@@ -29,8 +29,10 @@ export default function App() {
   const [view, setView] = useState<View>('headline')
   const [hit, setHit] = useState<Hit | null>(null)
   const [sortBy, setSortBy] = useState<'bimanual' | 'name'>('bimanual')
+  const [media, setMedia] = useState<boolean | null>(null)
 
   useEffect(() => {
+    void mediaReachable().then(setMedia)
     loadCorpus()
       .then((c) => { setCorpus(c); setVHi(c.config.v_hi) })
       .catch((e) => setErr(String(e)))
@@ -129,6 +131,15 @@ export default function App() {
               <Wall corpus={corpus} vHi={vHi} stats={stats} order={order} onPick={setHit} />
             </div>
             <aside className="w-[420px] shrink-0 overflow-auto border-l border-line bg-panel p-4">
+              {media === false && (
+                <p className="mb-3 rounded border border-line bg-ink p-3 text-[11px] leading-relaxed text-dim">
+                  No media server at <span className="num">{MEDIA_BASE}</span>, so
+                  full-resolution playback is off. The index, the task cards and the montage
+                  are all bundled and work as they are. To play the source video, run the
+                  dataset's own server over the drive — the README has the one-line command —
+                  or point <span className="num">VITE_MEDIA_BASE</span> at a bucket.
+                </p>
+              )}
               {hit ? (
                 <Player corpus={corpus} clipIdx={hit.clipIdx} second={hit.second} vHi={vHi} />
               ) : (

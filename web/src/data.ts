@@ -38,6 +38,21 @@ export const MEDIA_BASE = (
 
 export const media = (p: string) => `${MEDIA_BASE}/${p}`
 
+/** Is the local media server actually there? Deployed builds usually have no drive. */
+export async function mediaReachable(): Promise<boolean> {
+  try {
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), 2500)
+    const r = await fetch(`${MEDIA_BASE}/meta/dataset.json`, {
+      method: 'HEAD', signal: ctl.signal,
+    })
+    clearTimeout(timer)
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
 export async function loadCorpus(): Promise<Corpus> {
   const base = import.meta.env.BASE_URL
   const [meta, statesBuf, heatBuf, narration, tiles, validation] = await Promise.all([
