@@ -222,3 +222,80 @@ class YamKinematics:
         if not centers:
             return np.zeros((0, 3)), np.zeros(0)
         return np.vstack(centers), np.concatenate(radii)
+
+
+def numerical_jacobian(kinematics: "YamKinematics", q: np.ndarray, delta: float = 1e-6) -> np.ndarray:
+    """3x6 position Jacobian by central differences.
+
+    The URDF gives joint axes, so an analytic Jacobian is available, but central
+    differences cannot disagree with `tip_position` -- and it is `tip_position`
+    that every enrolled point was measured through.
+    """
+    jacobian = np.zeros((3, len(q)))
+    for index in range(len(q)):
+        forward, backward = q.copy(), q.copy()
+        forward[index] += delta
+        backward[index] -= delta
+        jacobian[:, index] = (kinematics.tip_position(forward) - kinematics.tip_position(backward)) / (2 * delta)
+    return jacobian
+
+
+def solve_ik(
+    kinematics: "YamKinematics",
+    target: Sequence[float],
+    seed: Sequence[float],
+    lower: Sequence[float],
+    upper: Sequence[float],
+    tolerance: float = 1e-4,
+    max_iterations: int = 200,
+    damping: float = 0.05,
+) -> Tuple[np.ndarray, float, bool]:
+    """Damped least-squares IK for tip position only, clamped to joint limits.
+
+    Damping keeps the step finite near singularities, where an undamped pseudo-
+    inverse asks for enormous joint velocities. Orientation is left free: this
+    arm has six joints, and spending three of them on orientation would rule out
+    many otherwise reachable points around an obstacle.
+    """
+    target = np.asarray(target, dtype=float)
+    lower = np.asarray(lower, dtype=float)
+    upper = np.asarray(upper, dtype=float)
+    q = np.clip(np.asarray(seed, dtype=float), lower, upper)
+
+    for _ in range(max_iterations):
+        error = target - kinematics.tip_position(q)
+        distance = float(np.linalg.norm(error))
+        if distance < tolerance:
+            return q, distance, True
+
+        jacobian = numerical_jacobian(kinematics, q)
+        step = jacobian.T @ np.linalg.solve(
+            jacobian @ jacobian.T + (damping ** 2) * np.eye(3), error
+        )
+        q = np.clip(q + np.clip(step, -0.2, 0.2), lower, upper)
+
+    return q, float(np.linalg.norm(target - kinematics.tip_position(q))), False
+
+
+def solve_ik_collision_free(
+    kinematics: "YamKinematics",
+    target: Sequence[float],
+    checker,
+    lower: Sequence[float],
+    upper: Sequence[float],
+    seed: Optional[Sequence[float]] = None,
+    attempts: int = 60,
+    seed_rng: Optional[np.random.Generator] = None,
+) -> Optional[np.ndarray]:
+    """IK restarted from random seeds until a solution is both accurate and collision-free."""
+    rng = seed_rng or np.random.default_rng(0)
+    lower = np.asarray(lower, dtype=float)
+    upper = np.asarray(upper, dtype=float)
+
+    for attempt in range(attempts):
+        start = np.asarray(seed, dtype=float) if (attempt == 0 and seed is not None) \
+            else lower + rng.random(len(lower)) * (upper - lower)
+        q, error, converged = solve_ik(kinematics, target, start, lower, upper)
+        if converged and error < 5e-3 and checker.is_free(q):
+            return q
+    return None

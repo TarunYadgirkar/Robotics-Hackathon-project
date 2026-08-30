@@ -192,12 +192,29 @@ class MujocoCollisionChecker:
         return smallest
 
     def explain(self, q: Sequence[float]) -> List[str]:
-        labels = []
+        """One line per offending pair, worst first.
+
+        A flat contact between two links produces several contact points, so the
+        violations are collapsed per pair -- otherwise a single overlap reports
+        as five identical lines.
+        """
+        def body_name(geom_id: int) -> str:
+            return mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, self.model.geom_bodyid[geom_id])
+
+        worst: Dict[Tuple[int, int], Tuple[float, float]] = {}
         for g1, g2, dist, threshold in self._violations(q):
-            name = lambda g: mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, self.model.geom_bodyid[g])
+            previous = worst.get((g1, g2))
+            if previous is None or dist < previous[0]:
+                worst[(g1, g2)] = (dist, threshold)
+
+        lines = []
+        for (g1, g2), (dist, threshold) in sorted(worst.items(), key=lambda item: item[1][0]):
             kind = "obstacle" if (self._is_obstacle(g1) or self._is_obstacle(g2)) else "self"
-            labels.append(f"{kind}: {name(g1)} <-> {name(g2)} at {dist * 1000:+.1f}mm (needs {threshold * 1000:.0f}mm)")
-        return labels
+            lines.append(
+                f"{kind}: {body_name(g1)} <-> {body_name(g2)} at {dist * 1000:+.1f}mm "
+                f"(needs {threshold * 1000:.0f}mm)"
+            )
+        return lines
 
 
 class RedundantCollisionChecker:
@@ -219,6 +236,9 @@ class RedundantCollisionChecker:
 
     def clearance(self, q: Sequence[float]) -> float:
         return min(self.sphere_checker.clearance(q), self.mujoco_checker.clearance(q))
+
+    def explain(self, q: Sequence[float]) -> List[str]:
+        return self.sphere_checker.explain(q) + self.mujoco_checker.explain(q)
 
     def segment_is_free(self, start: Sequence[float], end: Sequence[float], resolution: float = 0.05) -> bool:
         start, end = np.asarray(start, dtype=float), np.asarray(end, dtype=float)

@@ -128,3 +128,48 @@ def resample(path: Sequence[np.ndarray], step: float = 0.02) -> List[np.ndarray]
         for index in range(1, steps + 1):
             dense.append(start + (end - start) * (index / steps))
     return dense
+
+
+def verify_under_tracking_error(
+    checker,
+    path: Sequence[np.ndarray],
+    tracking_error: float,
+    samples: int = 24,
+    seed: int = 0,
+) -> dict:
+    """Check a path still clears when the arm lags behind the command.
+
+    Verifying the commanded trajectory is not the same as verifying the one the
+    arm actually flies. Under gravity this arm sags behind its command by a
+    substantial angle, and a path that verifies clean at the commanded angles can
+    still be flown through a self-collision: perturbing a verified trajectory by
+    the sag measured on hardware puts a few percent of its poses in collision.
+
+    So each waypoint is re-checked at random offsets inside the tracking-error
+    envelope the guard enforces. This is sampling, not a proof -- it bounds the
+    risk, it does not eliminate it -- so it reports the failures it found rather
+    than returning a bare boolean.
+    """
+    rng = np.random.default_rng(seed)
+    failures = []
+    worst = float("inf")
+
+    for index, waypoint in enumerate(path):
+        waypoint = np.asarray(waypoint, dtype=float)
+        for _ in range(samples):
+            offset = rng.uniform(-tracking_error, tracking_error, size=len(waypoint))
+            perturbed = waypoint + offset
+            clearance = checker.clearance(perturbed)
+            worst = min(worst, clearance)
+            if not checker.is_free(perturbed):
+                failures.append({"index": index, "offset_deg": np.degrees(offset).round(1).tolist()})
+                break
+
+    return {
+        "ok": not failures,
+        "checked": len(path) * samples,
+        "failures": len(failures),
+        "first_failure": failures[0] if failures else None,
+        "worst_clearance": worst,
+        "tracking_error_deg": float(np.degrees(tracking_error)),
+    }
