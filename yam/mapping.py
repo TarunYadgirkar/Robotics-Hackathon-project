@@ -12,13 +12,28 @@ DEFAULT_BOUNDS_MAX = (0.95, 0.95, 1.00)
 INCH = 0.0254
 BASE_SIDE_Y = 0.100
 
+#: Shoulder pivot height in the robot frame, from the kinematic model.
+SHOULDER_PIVOT_Z = 0.1135
+
 
 def base_clamps(
-    height: float = 5 * INCH,
+    height: float = 5.75 * INCH,
     length: float = 3 * INCH,
     width: float = 1 * INCH,
-    top_z: float = 4 * INCH,
+    top_z: float = SHOULDER_PIVOT_Z + 0.75 * INCH,
 ) -> list:
+    """The clamps holding the base to the table, from measurement.
+
+    LiDAR does not resolve them -- they are 25mm wide beside a much larger arm
+    -- so their height is given rather than sensed, and an error here is
+    invisible to every check downstream.
+
+    Height is keyed to the shoulder pivot rather than to the table, because the
+    pivot is a point the kinematic model knows exactly while the table's height
+    in the robot frame is inferred. Measured: the clamps stand 5.75 in above the
+    table and the pivot 5.00 in above it, so their tops sit 0.75 in above the
+    pivot regardless of where the table plane is judged to be.
+    """
     boxes = []
     for side in (-1.0, 1.0):
         inner_y = side * BASE_SIDE_Y
