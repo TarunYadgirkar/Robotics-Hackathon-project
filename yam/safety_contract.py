@@ -6,6 +6,7 @@ this module keep those outcomes separate and make the safe default explicit:
 only an :class:`ApprovedPlan` may reach the guarded executor.
 """
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Optional, Sequence
@@ -31,6 +32,10 @@ class SafetyCode(str, Enum):
     PATH_UNSAFE = "path_unsafe"
     TRACKING_ENVELOPE_UNSAFE = "tracking_envelope_unsafe"
     SCENE_NOT_INTERLOCKED = "scene_not_interlocked"
+    CONTACT_SURFACE_UNKNOWN = "contact_surface_unknown"
+    CONTACT_UNREACHABLE = "contact_unreachable"
+    CONTACT_CORRIDOR_UNSAFE = "contact_corridor_unsafe"
+    CONTACT_TRAVEL_UNBOUNDED = "contact_travel_unbounded"
 
 
 def spoken_safety_refusal(reason: str) -> str:
@@ -114,3 +119,57 @@ def normalized_tracking_bounds(values: Sequence[float] | float, joint_count: int
     if not np.isfinite(bounds).all() or np.any(bounds <= 0.0):
         raise ValueError("tracking bounds must be finite and positive")
     return bounds
+
+
+@dataclass(frozen=True)
+class ApprovedContact:
+    """A deliberate touch, plus the evidence that bounded it.
+
+    A contact task cannot be certified the way a plan is. An :class:`ApprovedPlan`
+    promises the arm never touches anything; this promises the opposite, so the
+    guarantees have to be different in kind:
+
+    * ``approach`` is an ordinary collision-free path to a standoff pose, and is
+      held to exactly the same standard as any planned motion.
+    * ``probe`` deliberately ends inside the mapped surface, so it cannot be
+      collision-free. What is checked instead is that it travels in a straight
+      line along one direction, that nothing but the target surface lies in its
+      corridor, and that its length is bounded by how uncertain the surface's
+      position actually is.
+
+    The executor re-hashes both segments and refuses a probe whose travel
+    exceeds ``max_travel_m``, so a caller cannot approve a short touch and
+    substitute a long press.
+    """
+
+    approach: np.ndarray
+    probe: np.ndarray
+    approach_sha256: str
+    probe_sha256: str
+    map_sha256: str
+    calibration_sha256: str
+    issued_at_unix: float
+    valid_for_seconds: float
+    start_tolerance_rad: tuple[float, ...]
+    approach_direction: np.ndarray
+    max_travel_m: float
+    surface: Mapping[str, Any] = field(default_factory=dict)
+    report: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in ("approach", "probe"):
+            segment = np.asarray(getattr(self, name), dtype=float)
+            if segment.ndim != 2 or segment.shape[0] < 1 or segment.shape[1] != 6:
+                raise ValueError(f"approved {name} must have shape (N, 6), got {segment.shape}")
+            if not np.isfinite(segment).all():
+                raise ValueError(f"approved {name} contains non-finite values")
+            object.__setattr__(self, name, segment.copy())
+        if len(self.start_tolerance_rad) != 6:
+            raise ValueError("start_tolerance_rad must contain six joint tolerances")
+        if not math.isfinite(self.max_travel_m) or self.max_travel_m <= 0.0:
+            raise ValueError("max_travel_m must be finite and positive")
+        direction = np.asarray(self.approach_direction, dtype=float).reshape(3)
+        norm = float(np.linalg.norm(direction))
+        if not math.isfinite(norm) or norm <= 0.0:
+            raise ValueError("approach_direction must be a non-zero vector")
+        object.__setattr__(self, "approach_direction", direction / norm)

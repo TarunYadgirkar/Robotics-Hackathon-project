@@ -90,6 +90,11 @@ def main() -> None:
             return
 
         with connected_arm(joints=ARM_JOINTS) as arm:
+            # A motor that has not been enabled reports "disabled", which the
+            # fault check treats as a failure. Enable first so the start pose is
+            # read from a live arm rather than from a latched status.
+            arm.clear_errors()
+            arm.enable()
             start = arm.read_state().positions
 
         outcome = plan_on_demand(

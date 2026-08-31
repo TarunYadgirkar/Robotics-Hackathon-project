@@ -14,7 +14,7 @@ import numpy as np
 
 from yam.arm import ArmState, YamArm
 from yam.hardware_calibration import HardwareSafetyCalibration
-from yam.safety_contract import ApprovedPlan, normalized_tracking_bounds
+from yam.safety_contract import ApprovedContact, ApprovedPlan, normalized_tracking_bounds
 
 
 class ExecutionAborted(RuntimeError):
@@ -58,6 +58,30 @@ class GuardLimits:
 
 
 @dataclass
+class ContactReport:
+    """What a probe found, whether or not it found anything."""
+
+    contacted: bool = False
+    probe_index: Optional[int] = None
+    joint: Optional[str] = None
+    residual_nm: float = 0.0
+    travel_m: float = 0.0
+    pose: Optional[List[float]] = None
+    approach: Optional["ExecutionReport"] = None
+    abort_reason: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "contacted": self.contacted,
+            "probe_index": self.probe_index,
+            "joint": self.joint,
+            "residual_nm": self.residual_nm,
+            "travel_m": self.travel_m,
+            "abort_reason": self.abort_reason,
+        }
+
+
+@dataclass
 class ExecutionReport:
     completed: bool = False
     waypoints_sent: int = 0
@@ -80,6 +104,7 @@ class GuardedExecutor:
         self.checker = checker
         self.limits = limits or GuardLimits()
         self.map_sha256 = map_sha256
+        self.contact_is_expected = False
         self._baseline: Optional[np.ndarray] = None
         self._elapsed = 0.0
 
@@ -101,6 +126,26 @@ class GuardedExecutor:
         self._baseline += alpha * (torque - self._baseline)
         return self._baseline
 
+    def _contact_step(self, torque: np.ndarray, report: ExecutionReport):
+        """The joint whose torque stepped past its allowance, if any.
+
+        Planning and touching read this same signal in opposite directions: for
+        a plan it is the failure that stops the arm, for a probe it is the
+        surface being found. Detecting it once keeps the two interpretations
+        from drifting apart.
+        """
+        if self._baseline is None or self._elapsed < self.limits.warmup_seconds:
+            return None
+        residual = np.abs(torque - self._baseline)
+        allowance = self._residual_allowance(len(torque))
+        # Rank by how far each joint is through its own allowance, so the joint
+        # in most trouble is reported rather than the loudest one.
+        worst = int(np.argmax(residual / allowance))
+        report.peak_torque_residual = max(report.peak_torque_residual, float(residual.max()))
+        if residual[worst] > allowance[worst]:
+            return worst, float(residual[worst]), float(allowance[worst])
+        return None
+
     def _check(self, target: np.ndarray, state: ArmState, report: ExecutionReport, period: float) -> None:
         measured = np.asarray(state.positions)
         error = np.abs(target - measured)
@@ -111,20 +156,15 @@ class GuardedExecutor:
 
         # Compare against the baseline BEFORE folding this sample into it, so a
         # step change is measured against history rather than against itself.
-        if self._baseline is not None and self._elapsed >= self.limits.warmup_seconds:
-            residual = np.abs(torque - self._baseline)
-            allowance = self._residual_allowance(len(torque))
-            # Rank by how far each joint is through its own allowance, so the
-            # joint in most trouble is reported rather than the loudest one.
-            worst = int(np.argmax(residual / allowance))
-            report.peak_torque_residual = max(report.peak_torque_residual, float(residual.max()))
-            if residual[worst] > allowance[worst]:
-                raise ExecutionAborted(
-                    f"{self.arm.joints[worst].name} torque jumped {residual[worst]:.2f}Nm above its "
-                    f"gravity baseline ({torque[worst]:+.2f}Nm vs {self._baseline[worst]:+.2f}Nm expected, "
-                    f"allowance {allowance[worst]:.2f}Nm) -- treating that step as contact",
-                    state,
-                )
+        contact = self._contact_step(torque, report)
+        if contact is not None and not self.contact_is_expected:
+            joint, residual, allowance = contact
+            raise ExecutionAborted(
+                f"{self.arm.joints[joint].name} torque jumped {residual:.2f}Nm above its "
+                f"gravity baseline ({torque[joint]:+.2f}Nm vs {self._baseline[joint]:+.2f}Nm expected, "
+                f"allowance {allowance:.2f}Nm) -- treating that step as contact",
+                state,
+            )
 
         self._update_baseline(torque, period)
         self._elapsed += period
@@ -233,4 +273,113 @@ class GuardedExecutor:
             time.sleep(period)
 
         report.completed = True
+        return report
+
+    def _certify(self, contact: ApprovedContact, rate_hz: float, gain_scale: float) -> None:
+        if not self.limits.hardware_validated:
+            raise ExecutionAborted(
+                "contact guard is not hardware-validated; a probe is stopped by the guard, "
+                "so an uncalibrated one has nothing stopping it"
+            )
+        if not isinstance(contact, ApprovedContact):
+            raise ExecutionAborted(
+                "motion has no safety approval certificate; raw trajectories cannot command the arm"
+            )
+        if self.limits.calibration_sha256 != contact.calibration_sha256:
+            raise ExecutionAborted("the touch was approved under a different hardware calibration")
+        if self.map_sha256 is None or self.map_sha256 != contact.map_sha256:
+            raise ExecutionAborted("the touch was approved against a different or unidentified workcell map")
+        if time.time() > contact.issued_at_unix + contact.valid_for_seconds:
+            raise ExecutionAborted("the touch approval expired; observe the scene and plan again")
+        for name, expected in (("approach", contact.approach_sha256), ("probe", contact.probe_sha256)):
+            actual = hashlib.sha256(np.asarray(getattr(contact, name), dtype="<f8").tobytes()).hexdigest()
+            if actual != expected:
+                raise ExecutionAborted(f"the {name} changed after it was safety-approved")
+        if self.limits.calibrated_rate_hz is None or not np.isclose(rate_hz, self.limits.calibrated_rate_hz):
+            raise ExecutionAborted(
+                f"execution rate {rate_hz:g}Hz does not match the calibrated rate "
+                f"{self.limits.calibrated_rate_hz!r}Hz")
+        if self.limits.calibrated_gain_scale is None or not np.isclose(gain_scale, self.limits.calibrated_gain_scale):
+            raise ExecutionAborted(
+                f"gain scale {gain_scale:g} does not match the calibrated gain "
+                f"{self.limits.calibrated_gain_scale!r}")
+
+    def touch(
+        self,
+        contact: ApprovedContact,
+        rate_hz: float = 100.0,
+        gain_scale: float = 0.5,
+        on_sample: Optional[Callable[[int, ArmState], None]] = None,
+    ) -> ContactReport:
+        """Fly the approach under guard, then probe until the surface is felt.
+
+        The two phases read the guard's contact signal in opposite ways. During
+        the approach a torque step means something is in the way and the arm
+        stops with an error. During the probe it means the surface was found,
+        which is the point, and the arm stops with a result.
+
+        Nothing else is relaxed: the absolute torque backstop, the tracking
+        limit, motor health and temperature abort in both phases. A probe that
+        feels nothing stops anyway when it runs out of approved travel.
+        """
+        self._certify(contact, rate_hz, gain_scale)
+        period = 1.0 / rate_hz
+
+        approach_report = ExecutionReport()
+        start_state = self.arm.read_state()
+        start_error = np.abs(np.asarray(start_state.positions) - contact.approach[0])
+        tolerance = np.asarray(contact.start_tolerance_rad)
+        if np.any(start_error > tolerance):
+            worst = int(np.argmax(start_error / tolerance))
+            raise ExecutionAborted(
+                f"live start pose differs from the approved approach on {self.arm.joints[worst].name} "
+                f"by {np.degrees(start_error[worst]):.1f}deg; re-plan from the live pose", start_state)
+
+        self.contact_is_expected = False
+        for index, waypoint in enumerate(contact.approach):
+            target = np.asarray(waypoint, dtype=float)
+            if self.limits.require_free and self.checker is not None and not self.checker.is_free(target):
+                describe = getattr(self.checker, "explain", None)
+                detail = "; ".join(describe(target)) if callable(describe) else "no detail available"
+                raise ExecutionAborted(f"approach waypoint {index} is not collision-free: {detail}")
+            state = self.arm.command_positions(target, gain_scale=gain_scale)
+            approach_report.waypoints_sent += 1
+            self._check(target, state, approach_report, period)
+            if on_sample is not None:
+                on_sample(index, state)
+            time.sleep(period)
+        approach_report.completed = True
+
+        # The probe deliberately ends inside the mapped surface, so the
+        # collision check that protects the approach cannot apply to it. What
+        # bounds it is the approved travel and the guard.
+        self.contact_is_expected = True
+        self._baseline = None
+        self._elapsed = 0.0
+        report = ContactReport(approach=approach_report)
+
+        try:
+            for index, waypoint in enumerate(contact.probe):
+                target = np.asarray(waypoint, dtype=float)
+                state = self.arm.command_positions(target, gain_scale=gain_scale)
+                torque = np.asarray(state.torques)
+                found = self._contact_step(torque, approach_report)
+                self._check(target, state, approach_report, period)
+                if found is not None:
+                    joint, residual, _ = found
+                    report.contacted = True
+                    report.probe_index = index
+                    report.joint = self.arm.joints[joint].name
+                    report.residual_nm = residual
+                    report.pose = target.tolist()
+                    break
+                if on_sample is not None:
+                    on_sample(index, state)
+                time.sleep(period)
+        finally:
+            self.contact_is_expected = False
+
+        if not report.contacted:
+            report.probe_index = len(contact.probe) - 1
+            report.pose = np.asarray(contact.probe[-1], dtype=float).tolist()
         return report
