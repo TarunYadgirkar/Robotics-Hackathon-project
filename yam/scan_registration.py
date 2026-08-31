@@ -21,6 +21,7 @@ ARKIT_TO_ZUP = np.array([
     [0.0, 1.0, 0.0],
 ])
 
+MIN_SURFACE_POINTS = 4
 MIN_MODEL_COVERAGE = 0.95
 MAX_EVIDENCE_ERROR = 0.05
 MIN_SURFACE_SPREAD = 0.10
@@ -63,6 +64,23 @@ class ScanRegistration:
 
     @property
     def uncertainty(self) -> float:
+        """How far a mapped surface may sit from where it physically is.
+
+        This is not the fit residual. The arm-model gaps (`rmse`,
+        `model_p95_error`) measure how far each scan point lies from the arm's
+        surface, which is dominated by the sensor's own per-point noise -- and
+        that noise does not move the map, it only blurs it.
+
+        Touched points are the only independent evidence here: the arm reached
+        them in its own frame, so their distance to the scan measures the
+        thing the planner needs. When enough of them exist, they set the
+        number. The model gaps stay as a ceiling, because a fit that matches
+        the arm badly cannot be trusted however well a handful of touches
+        agree.
+        """
+        if self.surface_max_error is not None and self.surface_points >= MIN_SURFACE_POINTS:
+            model_ceiling = self.model_p95_error if self.model_p95_error is not None else self.rmse
+            return float(min(self.surface_max_error, model_ceiling))
         errors = [self.rmse]
         if self.model_p95_error is not None:
             errors.append(self.model_p95_error)
