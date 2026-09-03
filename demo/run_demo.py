@@ -40,7 +40,7 @@ Terminal.app already holds macOS Camera permission; agent-spawned processes do
 not (FACTS.md WEBCAM_STATUS=blocked), and BEAT 4 needs the webcam.
 
     cd /Users/tarunyadgirkar/TarunsCode/hackathons/Robotics-Hackathon-project
-    WC_VIDEOS=/Users/tarunyadgirkar/TarunsCode/wc-hack ARM_SIM_RENDER=0 \
+    DS_VIDEOS=/Users/tarunyadgirkar/TarunsCode/ds-hack ARM_SIM_RENDER=0 \
       .venv/bin/python demo/run_demo.py
 
 (run_demo sets both of those itself if they are unset — the explicit form above
@@ -210,7 +210,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PY = str(REPO_ROOT / ".venv" / "bin" / "python")
 
-os.environ.setdefault("WC_VIDEOS", "/Users/tarunyadgirkar/TarunsCode/wc-hack")
+os.environ.setdefault("DS_VIDEOS", "/Users/tarunyadgirkar/TarunsCode/ds-hack")
 os.environ.setdefault("ARM_SIM_RENDER", "0")  # live path: no per-motion GIF render
 
 sys.path.insert(0, str(REPO_ROOT))

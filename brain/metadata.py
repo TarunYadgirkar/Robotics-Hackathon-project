@@ -1,4 +1,4 @@
-"""Metadata access for the decision brain. Reuses pipeline/wcdata.py loaders."""
+"""Metadata access for the decision brain. Reuses pipeline/dsdata.py loaders."""
 import sys
 from pathlib import Path
 
@@ -6,15 +6,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from pipeline import wcdata  # noqa: E402
+from pipeline import dsdata  # noqa: E402
 
 
 def load_tasks():
-    return wcdata.tasks()
+    return dsdata.tasks()
 
 
 def load_clips():
-    return wcdata.clips()
+    return dsdata.clips()
 
 
 def corpus_stats(tasks, clips):

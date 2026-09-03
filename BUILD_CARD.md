@@ -5,7 +5,7 @@ Repo: https://github.com/TarunYadgirkar/Robotics-Hackathon-project
 
 ## What existed before the event
 
-- **The dataset.** WORLD_CONTEXT_HACKATHON_V3_PUBLIC v3.1.1 — 424 five-minute clips, 50
+- **The dataset.** DATASET_PUBLIC_V3 v3.1.1 — 424 five-minute clips, 50
   industrial tasks, 35.3 hours, 1920×1080 @ 29.97 fps, no audio, with ~200 Hz IMU sidecars,
   thumbnails, 300 eight-second preview proxies, and full metadata.
 - **The dataset's own tooling.** Its Python SDK, and `launch/serve.py` — a zero-dependency
@@ -109,7 +109,7 @@ the same agent that wrote the pipeline, so this is a sanity check, not an indepe
 
 | Thing | Source | Use |
 | --- | --- | --- |
-| WORLD_CONTEXT_HACKATHON_V3_PUBLIC v3.1.1 | World Context | all video, IMU, metadata |
+| DATASET_PUBLIC_V3 v3.1.1 | Dataset V3 | all video, IMU, metadata |
 | `launch/serve.py` | ships with the dataset | media server, used verbatim |
 | MediaPipe Hands 0.10.21 | Google, Apache 2.0 | hand landmarks |
 | ffmpeg | FFmpeg project | decode |

@@ -13,7 +13,7 @@
     "gello_software": "https://github.com/wuphilipp/gello_software -- general teleop framework, YAM is the best-supported config",
     "robots_realtime": "https://github.com/uynitsuj/robots_realtime -- realtime/high-freq control incl. bimanual I2RT YAM, teleop or autonomous policy control",
     "berkeley_automation_i2rt2": "https://github.com/BerkeleyAutomation/i2rt2 (fork/variant, not inspected in depth)",
-    "berkeley_hack_guides": "https://github.com/max-titov/berkeley-hack-guides -- EXISTS but has NO YAM content. Only 3 files: README.md, so101-from-scratch-commands.md (SO-101/LeRobot/Feetech workshop setup, unrelated arm), world-context-data-howto.md (egocentric video dataset explorer). Confirmed via GitHub API tree listing on main branch -- nothing to extract for YAM."
+    "berkeley_hack_guides": "https://github.com/max-titov/berkeley-hack-guides -- EXISTS but has NO YAM content. Only 3 files: README.md, so101-from-scratch-commands.md (SO-101/LeRobot/Feetech workshop setup, unrelated arm), dataset-v3-data-howto.md (egocentric video dataset explorer). Confirmed via GitHub API tree listing on main branch -- nothing to extract for YAM."
   },
   "model_verified": {
     "raw_urls": [

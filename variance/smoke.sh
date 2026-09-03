@@ -2,8 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-export WC_VIDEOS="${WC_VIDEOS:-/Users/tarunyadgirkar/TarunsCode/wc-hack}"
-export WC_DATA="${WC_DATA:-/Users/tarunyadgirkar/TarunsCode/wc-hack}"
+export DS_VIDEOS="${DS_VIDEOS:-/Users/tarunyadgirkar/TarunsCode/ds-hack}"
+export WC_DATA="${WC_DATA:-/Users/tarunyadgirkar/TarunsCode/ds-hack}"
 PY=.venv/bin/python
 
 $PY variance/compute.py \

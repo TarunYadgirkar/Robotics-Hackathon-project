@@ -20,7 +20,7 @@ from dtaidistance import dtw, dtw_ndim
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "pipeline"))
-import wcdata  # noqa: E402
+import dsdata  # noqa: E402
 
 DETECTION_FLOOR = 0.5          # same rule as pipeline/segment.py's det1 exclusion
 MIN_CLIPS_FOR_CLUSTERING = 4   # below this, k=2 clustering is not meaningful
@@ -47,7 +47,7 @@ def task_detection_rate(clips):
     """Fraction of sampled frames with >=1 hand detected, aggregated over the task's clips."""
     total = hits = 0
     for c in clips:
-        p = wcdata.frames_path(c)
+        p = dsdata.frames_path(c)
         if not p.exists():
             continue
         t = pq.read_table(p, columns=["n_hands"])
@@ -63,7 +63,7 @@ def _col(table, name):
 
 def clip_landmark_series(clip):
     """Per-frame (cx, cy, aperture, speed), detected frames only, z-scored within the clip."""
-    p = wcdata.frames_path(clip)
+    p = dsdata.frames_path(clip)
     if not p.exists():
         return None
     t = pq.read_table(p, columns=["n_hands", "h0_cx", "h0_cy", "h0_aperture", "h0_speed"])
@@ -87,7 +87,7 @@ def clip_landmark_series(clip):
 
 def clip_imu_series(clip):
     """Fallback: z-scored gyro RMS time series (already computed by extract.py per frame)."""
-    p = wcdata.frames_path(clip)
+    p = dsdata.frames_path(clip)
     if not p.exists():
         return None
     t = pq.read_table(p, columns=["gyro_rms"])
@@ -153,7 +153,7 @@ def confound_flag(labels, group_ids):
 
 def compute_task(task, limit_clips=None):
     task_id = task["canonical_task_id"]
-    clips = wcdata.clips_for_task(task_id)
+    clips = dsdata.clips_for_task(task_id)
     if limit_clips:
         clips = clips[:limit_clips]
     result = {
@@ -279,7 +279,7 @@ def main():
     ap.add_argument("--ranking-out", default=str(REPO / "variance/results/ranking.txt"))
     args = ap.parse_args()
 
-    all_tasks = wcdata.tasks()
+    all_tasks = dsdata.tasks()
     if args.tasks:
         all_tasks = [t for t in all_tasks if t["canonical_task_id"] in args.tasks]
 

@@ -1,14 +1,14 @@
 REPO_ROOT: /Users/tarunyadgirkar/TarunsCode/hackathons/Robotics-Hackathon-project
 GIT_BRANCH: idk-demo
-DATASET_ROOT: /Users/tarunyadgirkar/TarunsCode/wc-hack
+DATASET_ROOT: /Users/tarunyadgirkar/TarunsCode/ds-hack
 DATASET_VERSION: 3.1.1
-WC23_VOLUME_MOUNTED: no
-WC_VIDEOS_ENV_REQUIRED: WC_VIDEOS=/Users/tarunyadgirkar/TarunsCode/wc-hack
-WC_DATA_ENV_DEFAULT_OK: yes (pipeline/wcdata.py defaults WC_DATA to ~/TarunsCode/wc-hack already)
-RAW_VIDEO_FILES_LOCAL: absent (no videos/ dir under wc-hack; do not attempt re-extraction, all 424 clips already extracted)
+DS23_VOLUME_MOUNTED: no
+DS_VIDEOS_ENV_REQUIRED: DS_VIDEOS=/Users/tarunyadgirkar/TarunsCode/ds-hack
+WC_DATA_ENV_DEFAULT_OK: yes (pipeline/dsdata.py defaults WC_DATA to ~/TarunsCode/ds-hack already)
+RAW_VIDEO_FILES_LOCAL: absent (no videos/ dir under ds-hack; do not attempt re-extraction, all 424 clips already extracted)
 SERVE_PY_PRESENT: yes
 SERVE_PY_COMPILES: yes
-PARQUET_OUTPUT_DIR: work/frames/<task_id>/<clip_id>.parquet (relative to REPO_ROOT; wcdata.WORK defaults to REPO/work)
+PARQUET_OUTPUT_DIR: work/frames/<task_id>/<clip_id>.parquet (relative to REPO_ROOT; dsdata.WORK defaults to REPO/work)
 PARQUET_COUNT: 424
 PARQUET_EXPECTED: 424
 PARQUET_TASK_DIRS: 50
@@ -40,7 +40,7 @@ INSTALLS_USED: 0 of 2 allowed (opencv-python and sounddevice were both already i
 
 ## Verified dataset facts (copied verbatim from PLAN_v2, dataset root corrected)
 
-Dataset root: `/Users/tarunyadgirkar/TarunsCode/wc-hack`
+Dataset root: `/Users/tarunyadgirkar/TarunsCode/ds-hack`
 
 `meta/tasks.jsonl` fields (confirmed present): `canonical_task_id`, `display_name`,
 `aliases`, `clip_count`, `independent_repetition_count`, `camera_count`,
@@ -81,19 +81,19 @@ low-frequency motion only.
 
 ## Prose notes (ambiguous items)
 
-1. **Dataset volume**: `/Volumes/WC23` is not mounted (`ls /Volumes` shows only
+1. **Dataset volume**: `/Volumes/DS23` is not mounted (`ls /Volumes` shows only
    `Macintosh HD`). The orchestrator-provided local copy at
-   `/Users/tarunyadgirkar/TarunsCode/wc-hack` is verified: VERSION file reads `3.1.1`,
+   `/Users/tarunyadgirkar/TarunsCode/ds-hack` is verified: VERSION file reads `3.1.1`,
    `meta/clips.jsonl` has 424 lines, `meta/tasks.jsonl` has 50 lines, `launch/serve.py`
    exists (20612 bytes) and compiles cleanly with `.venv/bin/python -m py_compile`.
-   All agents MUST run with `WC_VIDEOS=/Users/tarunyadgirkar/TarunsCode/wc-hack` — note
-   that `pipeline/wcdata.py`'s `WC_DATA` env var already defaults to
-   `~/TarunsCode/wc-hack`, so only `WC_VIDEOS` needs an explicit override; `WC_VIDEOS`
-   itself defaults to the unmounted `/Volumes/WC23/...` path and will not resolve without
+   All agents MUST run with `DS_VIDEOS=/Users/tarunyadgirkar/TarunsCode/ds-hack` — note
+   that `pipeline/dsdata.py`'s `WC_DATA` env var already defaults to
+   `~/TarunsCode/ds-hack`, so only `DS_VIDEOS` needs an explicit override; `DS_VIDEOS`
+   itself defaults to the unmounted `/Volumes/DS23/...` path and will not resolve without
    the override.
 
 2. **Raw video files are NOT present locally.** There is no `videos/` directory anywhere
-   under `wc-hack` (checked `find . -iname videos` — no results, and a sample clip's
+   under `ds-hack` (checked `find . -iname videos` — no results, and a sample clip's
    `relative_path` resolves to a nonexistent file). This does not block anything right now
    because extraction is already 100% done (424/424 parquets present, verified below), but
    it means **no agent can re-run `pipeline/extract.py` on any clip** — if a parquet is
@@ -101,7 +101,7 @@ low-frequency motion only.
    thumbnails ARE present locally (`imu/`, `thumbnails/` each have ~426 files).
 
 3. **Extraction is already complete.** `work/frames/<task_id>/<clip_id>.parquet` (relative
-   to REPO_ROOT; the path convention comes from `wcdata.frames_path()`, `WORK` defaults to
+   to REPO_ROOT; the path convention comes from `dsdata.frames_path()`, `WORK` defaults to
    `REPO_ROOT/work`) contains exactly 424 `.parquet` files across 50 task subdirectories —
    full match against the expected 424 clips / 50 tasks. No task_ids are incomplete. Agent
    A can proceed immediately without waiting on any extraction step.

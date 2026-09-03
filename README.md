@@ -23,7 +23,7 @@ ships with the package — full HTTP range support, so seeking into a 5-minute 1
 instant and nothing is copied.
 
 ```bash
-python3 ~/TarunsCode/wc-hack/launch/serve.py --root /Volumes/WC23/WORLD_CONTEXT_EXPLORER_V3 --port 8765
+python3 ~/TarunsCode/ds-hack/launch/serve.py --root /Volumes/DS23/DATASET_V3 --port 8765
 ```
 
 ```bash
@@ -45,7 +45,7 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python mediapip
 ```
 
 `extract.py` is resumable: it skips any clip whose Parquet already exists and opens, so a
-crash costs one clip, never the run. Set `WC_DATA` / `WC_VIDEOS` if your copies live
+crash costs one clip, never the run. Set `WC_DATA` / `DS_VIDEOS` if your copies live
 elsewhere.
 
 **Pin `mediapipe==0.10.21`.** Version 1.0.1 removes `mp.solutions` entirely and crashes on

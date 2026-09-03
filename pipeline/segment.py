@@ -11,19 +11,19 @@ import numpy as np
 import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import wcdata
+import dsdata
 
 CLIP_SECONDS = 300
 FPS = 2
 HEAT_W, HEAT_H = 32, 18
 APERTURE_BINS = 40
-OUT = wcdata.REPO / "web" / "public" / "data"
+OUT = dsdata.REPO / "web" / "public" / "data"
 SPEED_SCALE = 100.0  # normalised units/s -> uint8; 254 saturates, 255 = missing
 MISSING = 255
 
 
 def load(clip):
-    p = wcdata.frames_path(clip)
+    p = dsdata.frames_path(clip)
     if not p.exists():
         return None
     try:
@@ -59,13 +59,13 @@ def per_second(t):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    tasks = {t["canonical_task_id"]: t for t in wcdata.tasks()}
-    previews = wcdata.previews()
+    tasks = {t["canonical_task_id"]: t for t in dsdata.tasks()}
+    previews = dsdata.previews()
 
     clip_rows, states, missing = [], [], 0
     task_acc = {}
 
-    for clip in wcdata.clips():
+    for clip in dsdata.clips():
         t = load(clip)
         if t is None:
             missing += 1

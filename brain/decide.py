@@ -10,7 +10,7 @@ prints one JSON object to stdout:
 
 No hardcoded task names anywhere in this module -- every task name,
 alias, clip count, and hour figure comes from meta/tasks.jsonl and
-meta/clips.jsonl via pipeline/wcdata.py.
+meta/clips.jsonl via pipeline/dsdata.py.
 """
 import argparse
 import json

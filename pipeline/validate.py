@@ -16,18 +16,18 @@ import pyarrow.parquet as pq
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import wcdata
+import dsdata
 
 STATE_NAMES = ["ABSENT", "TRANSIT", "ONE-HANDED", "TWO-HANDED"]
 TILE_W, TILE_H = 320, 180
 COLS, ROWS = 4, 3
-OUT = wcdata.WORK / "validation"
+OUT = dsdata.WORK / "validation"
 DETECTION_FLOOR = 0.5
 
 
 def states_for(clip, v_hi, cfg):
     """Mirror of the browser's classifier, including the median-of-3 smoothing."""
-    t = pq.read_table(wcdata.frames_path(clip))
+    t = pq.read_table(dsdata.frames_path(clip))
     n = np.array(t["n_hands"].to_pylist(), np.uint8)
     def col(name):
         return np.array([np.nan if v is None else v for v in t[name].to_pylist()], np.float32)
@@ -53,7 +53,7 @@ def states_for(clip, v_hi, cfg):
 
 
 def _frame(clip, t, w, h):
-    cmd = ["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(wcdata.video_path(clip)),
+    cmd = ["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(dsdata.video_path(clip)),
            "-frames:v", "1", "-vf", f"scale={w}:{h}", "-f", "image2pipe",
            "-vcodec", "mjpeg", "-"]
     buf = subprocess.run(cmd, capture_output=True).stdout
@@ -88,13 +88,13 @@ def main():
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()
 
-    cfg = json.loads((wcdata.REPO / "web/public/data/corpus.json").read_text())["config"]
-    corpus_tasks = json.loads((wcdata.REPO / "web/public/data/corpus.json").read_text())["tasks"]
+    cfg = json.loads((dsdata.REPO / "web/public/data/corpus.json").read_text())["config"]
+    corpus_tasks = json.loads((dsdata.REPO / "web/public/data/corpus.json").read_text())["tasks"]
     ok_tasks = {t["id"] for t in corpus_tasks if t["det1"] >= DETECTION_FLOOR}
 
     rng = random.Random(args.seed)
-    pool = [c for c in wcdata.clips()
-            if wcdata.frames_path(c).exists() and c["canonical_task_id"] in ok_tasks]
+    pool = [c for c in dsdata.clips()
+            if dsdata.frames_path(c).exists() and c["canonical_task_id"] in ok_tasks]
     rng.shuffle(pool)
 
     picks, cache = [], {}
@@ -109,7 +109,7 @@ def main():
                       "state_name": STATE_NAMES[int(cache[cid][second])]})
 
     OUT.mkdir(parents=True, exist_ok=True)
-    by_id = {c["clip_id"]: c for c in wcdata.clips()}
+    by_id = {c["clip_id"]: c for c in dsdata.clips()}
     sheets = []
     for start in range(0, len(picks), COLS * ROWS):
         batch = picks[start:start + COLS * ROWS]
