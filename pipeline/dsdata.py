@@ -4,8 +4,8 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-DATA = Path(os.environ.get("WC_DATA", Path.home() / "TarunsCode/wc-hack"))
-VIDEO_ROOT = Path(os.environ.get("WC_VIDEOS", "/Volumes/WC23/WORLD_CONTEXT_EXPLORER_V3"))
+DATA = Path(os.environ.get("WC_DATA", Path.home() / "TarunsCode/ds-hack"))
+VIDEO_ROOT = Path(os.environ.get("DS_VIDEOS", "/Volumes/DS23/DATASET_V3"))
 REPO = Path(__file__).resolve().parent.parent
 WORK = Path(os.environ.get("WC_WORK", REPO / "work"))
 
