@@ -13,12 +13,12 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import wcdata
+import dsdata
 from validate import states_for
 
 WINDOW = 8
 BIMANUAL = 3
-OUT = wcdata.REPO / "web" / "public" / "tiles"
+OUT = dsdata.REPO / "web" / "public" / "tiles"
 DETECTION_FLOOR = 0.5
 
 
@@ -34,14 +34,14 @@ def best_window(states):
 
 
 def main():
-    corpus = json.loads((wcdata.REPO / "web/public/data/corpus.json").read_text())
+    corpus = json.loads((dsdata.REPO / "web/public/data/corpus.json").read_text())
     cfg = corpus["config"]
     ok = {t["id"] for t in corpus["tasks"] if t["det1"] >= DETECTION_FLOOR}
 
     best = {}
-    for clip in wcdata.clips():
+    for clip in dsdata.clips():
         tid = clip["canonical_task_id"]
-        if tid not in ok or not wcdata.frames_path(clip).exists():
+        if tid not in ok or not dsdata.frames_path(clip).exists():
             continue
         start, score = best_window(states_for(clip, cfg["v_hi"], cfg))
         if tid not in best or score > best[tid]["score"]:
@@ -56,7 +56,7 @@ def main():
         if not path.exists():
             subprocess.run([
                 "ffmpeg", "-v", "error", "-y", "-ss", str(pick["start"]),
-                "-i", str(wcdata.video_path(clip)), "-t", str(WINDOW),
+                "-i", str(dsdata.video_path(clip)), "-t", str(WINDOW),
                 "-vf", "scale=320:180", "-an", "-c:v", "libx264", "-crf", "30",
                 "-preset", "veryfast", "-movflags", "+faststart", str(path),
             ], check=True)
@@ -66,7 +66,7 @@ def main():
         }
         print(f"{tid} {pick['score']}/{WINDOW} @ {pick['start']}s", flush=True)
 
-    (wcdata.REPO / "web/public/data/tiles.json").write_text(json.dumps(manifest, indent=2))
+    (dsdata.REPO / "web/public/data/tiles.json").write_text(json.dumps(manifest, indent=2))
     total = sum(p.stat().st_size for p in OUT.glob("*.mp4"))
     print(f"{len(manifest)} tiles, {total // 1024 // 1024} MB")
 

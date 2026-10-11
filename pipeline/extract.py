@@ -17,7 +17,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import wcdata
+import dsdata
 
 FPS = 2.0
 W, H = 640, 360
@@ -69,7 +69,7 @@ def imu_per_second(clip, n_seconds):
     """
     gyro_rms = np.full(n_seconds, np.nan, np.float32)
     lean = np.full(n_seconds, np.nan, np.float32)
-    path = wcdata.imu_path(clip)
+    path = dsdata.imu_path(clip)
     if not path.exists():
         return gyro_rms, lean
     with open(path) as fh:
@@ -108,7 +108,7 @@ def track_clip(clip):
         "h0_cx", "h0_cy", "h0_size", "h0_aperture", "h0_score", "h0_label", "h0_lm",
         "h1_cx", "h1_cy", "h1_size", "h1_aperture", "h1_score", "h1_label", "h1_lm",
     )}
-    for i, frame in enumerate(iter_frames(wcdata.video_path(clip))):
+    for i, frame in enumerate(iter_frames(dsdata.video_path(clip))):
         res = hands.process(frame)
         found = []
         if res.multi_hand_landmarks:
@@ -167,7 +167,7 @@ def add_speeds(rows):
 
 
 def process(clip):
-    out = wcdata.frames_path(clip)
+    out = dsdata.frames_path(clip)
     if out.exists():
         try:
             pq.read_metadata(out)
@@ -224,9 +224,9 @@ def main():
     args = ap.parse_args()
 
     if args.all:
-        todo = wcdata.clips()
+        todo = dsdata.clips()
     elif args.task:
-        todo = [c for t in args.task for c in wcdata.clips_for_task(t)]
+        todo = [c for t in args.task for c in dsdata.clips_for_task(t)]
     else:
         ap.error("pass --task or --all")
     if args.limit:

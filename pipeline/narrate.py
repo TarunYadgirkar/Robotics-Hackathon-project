@@ -17,11 +17,11 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import wcdata
+import dsdata
 from validate import states_for
 
 NAMES = {0: "hands out of frame", 1: "transit", 2: "one-handed work", 3: "two-handed work"}
-OUT = wcdata.REPO / "web" / "public" / "audio"
+OUT = dsdata.REPO / "web" / "public" / "audio"
 VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 MIN_RUN = 4  # seconds; shorter runs are noise at 2 fps
 
@@ -93,15 +93,15 @@ def main():
     key = os.environ.get("ELEVENLABS_API_KEY")
     print("voice:", "elevenlabs" if key else "macos say (set ELEVENLABS_API_KEY to upgrade)")
 
-    corpus = json.loads((wcdata.REPO / "web/public/data/corpus.json").read_text())
+    corpus = json.loads((dsdata.REPO / "web/public/data/corpus.json").read_text())
     cfg = corpus["config"]
     ok = {t["id"] for t in corpus["tasks"] if t["det1"] >= 0.5}
-    tasks = {t["canonical_task_id"]: t for t in wcdata.tasks()}
+    tasks = {t["canonical_task_id"]: t for t in dsdata.tasks()}
 
     seen, chosen = set(), []
-    for clip in wcdata.clips():
+    for clip in dsdata.clips():
         tid = clip["canonical_task_id"]
-        if tid in seen or tid not in ok or not wcdata.frames_path(clip).exists():
+        if tid in seen or tid not in ok or not dsdata.frames_path(clip).exists():
             continue
         seen.add(tid)
         chosen.append(clip)
@@ -124,7 +124,7 @@ def main():
         except Exception as exc:
             print(f"{clip['clip_id']} FAILED {exc}", flush=True)
 
-    (wcdata.REPO / "web/public/data/narration.json").write_text(json.dumps(manifest, indent=2))
+    (dsdata.REPO / "web/public/data/narration.json").write_text(json.dumps(manifest, indent=2))
     print(f"{len(manifest)} narrations")
 
 
