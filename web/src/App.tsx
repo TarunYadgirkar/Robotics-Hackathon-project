@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  BIMANUAL, MEDIA_BASE, STATE_COLORS, STATE_NAMES, hours, loadCorpus, mediaReachable,
+  BIMANUAL, STATE_COLORS, STATE_NAMES, hours, loadCorpus, measurableTotals, mediaReachable,
   pct, taskStats, type Corpus,
 } from './data'
 import Wall, { type Hit } from './Wall'
@@ -14,18 +14,20 @@ import Limitations from './Limitations'
 type View = 'headline' | 'wall' | 'reel' | 'tasks' | 'montage' | 'limits'
 
 const VIEWS: [View, string][] = [
-  ['headline', 'Headline'],
-  ['wall', 'Corpus wall'],
+  ['headline', 'Finding'],
+  ['wall', 'Every clip'],
   ['reel', 'Reel builder'],
   ['tasks', 'Tasks'],
   ['montage', 'Montage'],
   ['limits', 'Limitations'],
 ]
 
+const LEGEND_ORDER = [3, 2, 1, 0] as const
+
 export default function App() {
   const [corpus, setCorpus] = useState<Corpus | null>(null)
   const [err, setErr] = useState<string>()
-  const [vHi, setVHi] = useState(0.43)
+  const [vHi, setVHi] = useState(0.6)
   const [view, setView] = useState<View>('headline')
   const [hit, setHit] = useState<Hit | null>(null)
   const [sortBy, setSortBy] = useState<'bimanual' | 'name'>('bimanual')
@@ -35,7 +37,7 @@ export default function App() {
     void mediaReachable().then(setMedia)
     loadCorpus()
       .then((c) => { setCorpus(c); setVHi(c.config.v_hi) })
-      .catch((e) => setErr(String(e)))
+      .catch((e: unknown) => setErr(String(e)))
   }, [])
 
   const stats = useMemo(() => (corpus ? taskStats(corpus, vHi) : null), [corpus, vHi])
@@ -48,109 +50,130 @@ export default function App() {
       : ids.sort((a, b) => (stats.get(b)?.bimanual ?? 0) - (stats.get(a)?.bimanual ?? 0))
   }, [corpus, stats, sortBy])
 
-  if (err) return <div className="p-8 text-red-400">Failed to load: {err}</div>
-  if (!corpus || !stats) return <div className="p-8 text-dim">Loading corpus…</div>
+  if (err) {
+    return (
+      <p className="p-8 text-critical">
+        The index data didn't load ({err}). Run <span className="num">pnpm build</span> again
+        or check that <span className="num">public/data</span> is present.
+      </p>
+    )
+  }
+  if (!corpus || !stats) return <p className="p-8 text-dim">Loading the index…</p>
 
-  const totals = [0, 0, 0, 0]
-  for (const s of stats.values()) s.tallies.forEach((v, i) => (totals[i] += v))
-  const grand = totals.reduce((a, b) => a + b, 0) || 1
+  const { totals, grand } = measurableTotals(corpus, stats)
+  const collected = corpus.clips.length * corpus.config.clip_seconds
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="border-b border-line px-5 py-3">
+    <div className="flex min-h-full flex-col lg:h-full">
+      <header className="flex flex-col gap-3 bg-panel px-4 pt-3 sm:px-6">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <h1 className="text-lg font-semibold tracking-tight">The Hands Index</h1>
+          <h1 className="font-display text-2xl font-extrabold tracking-wide uppercase">
+            The Hands Index
+          </h1>
           <p className="text-xs text-dim">
-            {corpus.clips.length} clips · {corpus.tasks.length} tasks ·{' '}
-            {hours(grand)} of industrial egocentric video, segmented with zero labels
+            <span className="num text-fg">{corpus.clips.length}</span> clips across{' '}
+            <span className="num text-fg">{corpus.tasks.length}</span> tasks,{' '}
+            <span className="num text-fg">{hours(collected)}</span> of industrial egocentric
+            video, segmented with zero labels
           </p>
         </div>
-        <nav className="mt-3 flex flex-wrap items-center gap-1">
+
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <label className="flex items-center gap-2 text-xs text-dim">
+            <span title="Hand speed above this counts as transit between objects">
+              Motion threshold
+            </span>
+            <input
+              type="range" min={0.1} max={1.2} step={0.01} value={vHi}
+              onChange={(e) => setVHi(+e.target.value)}
+              className="w-32 sm:w-40"
+            />
+            <span className="num w-10 text-fg">{vHi.toFixed(2)}</span>
+          </label>
+          <button
+            onClick={() => setVHi(corpus.config.v_hi)}
+            disabled={vHi === corpus.config.v_hi}
+            className="rounded bg-raised px-2 py-1 text-xs text-fg hover:bg-rule disabled:invisible"
+          >
+            Reset to {corpus.config.v_hi.toFixed(2)}
+          </button>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-dim" aria-label="Share of measurable time">
+            {LEGEND_ORDER.map((i) => (
+              <li key={i} className="flex items-center gap-1.5">
+                <span className="h-2.5 w-4 rounded-sm" style={{ background: STATE_COLORS[i] }} />
+                {STATE_NAMES[i]}
+                <span className="num text-fg">{pct(totals[i] / grand)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <nav aria-label="Views" className="-mx-4 flex overflow-x-auto px-4 sm:-mx-6 sm:px-6">
           {VIEWS.map(([v, label]) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`rounded px-3 py-1 text-xs transition-colors ${
-                view === v ? 'bg-accent font-semibold text-ink' : 'text-dim hover:text-fg'
+              aria-current={view === v ? 'page' : undefined}
+              className={`shrink-0 border-b-2 px-3 py-2 text-sm transition-colors ${
+                view === v
+                  ? 'border-accent font-medium text-fg'
+                  : 'border-transparent text-dim hover:text-fg'
               }`}
             >
               {label}
             </button>
           ))}
-          <div className="ml-auto flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs text-dim">
-              motion threshold
-              <input
-                type="range" min={0.1} max={1.2} step={0.01} value={vHi}
-                onChange={(e) => setVHi(+e.target.value)}
-                className="w-40 accent-[#ffb020]"
-              />
-              <span className="num w-10 text-fg">{vHi.toFixed(2)}</span>
-            </label>
-            <button
-              onClick={() => setVHi(corpus.config.v_hi)}
-              className="rounded border border-line px-2 py-0.5 text-xs text-dim hover:text-fg"
-            >
-              reset
-            </button>
-          </div>
         </nav>
-        <div className="mt-2 flex flex-wrap gap-4 text-xs text-dim">
-          {STATE_NAMES.map((n, i) => (
-            <span key={n} className="flex items-center gap-1.5">
-              <span className="h-2.5 w-4 rounded-sm" style={{ background: STATE_COLORS[i] }} />
-              {n}
-              <span className="num text-fg">{pct(totals[i] / grand)}</span>
-            </span>
-          ))}
-        </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-hidden">
+      <main className="flex-1 lg:min-h-0 lg:overflow-hidden">
         {view === 'headline' && (
-          <Headline corpus={corpus} stats={stats} order={order} vHi={vHi} onPick={setHit} />
+          <Headline
+            corpus={corpus} stats={stats} order={order}
+            totals={totals} grand={grand} collected={collected}
+          />
         )}
         {view === 'wall' && (
-          <div className="flex h-full">
-            <div className="min-w-0 flex-1 overflow-auto p-4">
-              <div className="mb-3 flex items-center gap-2 text-xs text-dim">
-                sort
+          <div className="flex flex-col lg:h-full lg:flex-row">
+            <aside className="bg-panel p-4 lg:order-2 lg:w-[420px] lg:shrink-0 lg:overflow-auto">
+              {hit ? (
+                <Player
+                  corpus={corpus} clipIdx={hit.clipIdx} second={hit.second} vHi={vHi}
+                  media={media !== false}
+                />
+              ) : (
+                <p className="text-sm leading-relaxed text-dim">
+                  Each row is one 5-minute clip, coloured second by second. Pick any
+                  moment to see what the index called it
+                  {media === false ? ' and a bundled sample from that task.' : ' and play it.'}
+                </p>
+              )}
+            </aside>
+            <section className="min-w-0 flex-1 p-4 lg:overflow-auto" aria-label="Every clip">
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-dim">
+                Sort by
                 {(['bimanual', 'name'] as const).map((s) => (
                   <button
                     key={s}
                     onClick={() => setSortBy(s)}
-                    className={`rounded px-2 py-0.5 ${
-                      sortBy === s ? 'bg-line text-fg' : 'hover:text-fg'
+                    aria-pressed={sortBy === s}
+                    className={`rounded px-2 py-1 ${
+                      sortBy === s ? 'bg-raised text-fg' : 'hover:text-fg'
                     }`}
                   >
-                    {s === 'bimanual' ? 'two-handed share' : 'task name'}
+                    {s === 'bimanual' ? 'Two-handed share' : 'Task name'}
                   </button>
                 ))}
-                <span className="ml-2">click any second to play that instant</span>
               </div>
-              <Wall corpus={corpus} vHi={vHi} stats={stats} order={order} onPick={setHit} />
-            </div>
-            <aside className="w-[420px] shrink-0 overflow-auto border-l border-line bg-panel p-4">
-              {media === false && (
-                <p className="mb-3 rounded border border-line bg-ink p-3 text-xs leading-relaxed text-dim">
-                  No media server at <span className="num">{MEDIA_BASE}</span>, so
-                  full-resolution playback is off. The index, the task cards and the montage
-                  are all bundled and work as they are. To play the source video, run the
-                  dataset's own server over the drive — the README has the one-line command —
-                  or point <span className="num">VITE_MEDIA_BASE</span> at a bucket.
-                </p>
-              )}
-              {hit ? (
-                <Player corpus={corpus} clipIdx={hit.clipIdx} second={hit.second} vHi={vHi} />
-              ) : (
-                <p className="text-sm text-dim">
-                  Pick a moment on the wall. Bright amber is two-handed work.
-                </p>
-              )}
-            </aside>
+              <div className="overflow-x-auto">
+                <Wall corpus={corpus} vHi={vHi} stats={stats} order={order} onPick={setHit} />
+              </div>
+            </section>
           </div>
         )}
-        {view === 'reel' && <Reel corpus={corpus} vHi={vHi} state={BIMANUAL} />}
+        {view === 'reel' && (
+          <Reel corpus={corpus} vHi={vHi} state={BIMANUAL} media={media !== false} />
+        )}
         {view === 'tasks' && <TaskPanel corpus={corpus} stats={stats} order={order} vHi={vHi} />}
         {view === 'montage' && <Montage corpus={corpus} vHi={vHi} />}
         {view === 'limits' && <Limitations corpus={corpus} vHi={vHi} />}

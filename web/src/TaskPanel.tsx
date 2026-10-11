@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import Quadrant from './Quadrant'
-import { measurable, pct, type Corpus, type Task, type TaskStats } from './data'
+import { measurable, pct, token, type Corpus, type Task, type TaskStats } from './data'
 
 function Heatmap({ corpus, index, task }: { corpus: Corpus; index: number; task: Task }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -9,12 +9,14 @@ function Heatmap({ corpus, index, task }: { corpus: Corpus; index: number; task:
     const cv = ref.current!
     const g = cv.getContext('2d')!
     const img = g.createImageData(W, H)
+    const hex = token('accent')
+    const [r, gr, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
     const off = index * W * H
     for (let i = 0; i < W * H; i++) {
       const v = Math.pow(corpus.heat[off + i] / 65535, 0.45)
-      img.data[i * 4] = 255 * v
-      img.data[i * 4 + 1] = 176 * v
-      img.data[i * 4 + 2] = 32 * v
+      img.data[i * 4] = r * v
+      img.data[i * 4 + 1] = gr * v
+      img.data[i * 4 + 2] = b * v
       img.data[i * 4 + 3] = 255
     }
     g.putImageData(img, 0, 0)
@@ -50,11 +52,11 @@ interface Props {
 
 export default function TaskPanel({ corpus, stats, order }: Props) {
   return (
-    <div className="h-full overflow-auto p-4">
-      <p className="mb-3 max-w-3xl text-xs text-dim">
+    <div className="p-4 sm:p-6 lg:h-full lg:overflow-auto">
+      <p className="mb-4 max-w-[65ch] text-sm leading-relaxed text-dim">
         The camera is torso-mounted, so image coordinates are body-relative hand position with
         no calibration. The heatmap is where this worker's hands live; the white box is the
-        90% containment envelope — the reach a robot would need. Grip aperture is
+        90% containment envelope, the reach a robot would need. Grip aperture is
         thumb-tip to index-tip over hand size: low is a precision pinch, high is a spread grasp.
       </p>
       <Quadrant
@@ -69,15 +71,15 @@ export default function TaskPanel({ corpus, stats, order }: Props) {
           const st = stats.get(tid)!
           const [x0, y0, x1, y1] = task.envelope
           return (
-            <div key={tid} id={`task-${tid}`} className="rounded border border-line bg-panel p-3">
+            <div key={tid} id={`task-${tid}`} className="rounded-md bg-panel p-3">
               <div className="mb-2 flex items-baseline justify-between gap-2">
-                <h3 className="truncate text-sm font-medium">{task.name}</h3>
+                <h3 className="truncate text-sm font-medium" title={task.name}>{task.name}</h3>
                 <span className="num text-sm text-accent">
-                  {measurable(task) ? pct(st.bimanual) : '—'}
+                  {measurable(task) ? pct(st.bimanual) : 'n/a'}
                 </span>
               </div>
               {!measurable(task) && (
-                <p className="mb-2 rounded bg-red-950/40 px-2 py-1 text-[11px] leading-tight text-red-300">
+                <p className="mb-2 rounded bg-critical-bg px-2 py-1 text-[11px] leading-tight text-critical">
                   Not measurable: hands detected in only {pct(task.det1)} of frames. Every
                   number on this card is unreliable.
                 </p>
@@ -111,8 +113,8 @@ export default function TaskPanel({ corpus, stats, order }: Props) {
                 })}
               </div>
               {task.reps === 1 && (
-                <p className="mt-2 text-[11px] leading-tight text-red-400/80">
-                  One recording family — this describes that recording, not the task.
+                <p className="mt-2 text-[11px] leading-tight text-dim">
+                  One recording family, so this describes that recording, not the task.
                 </p>
               )}
             </div>

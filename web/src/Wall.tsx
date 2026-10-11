@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { STATE_COLORS, clipStates, measurable, type Corpus, type TaskStats } from './data'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { clipStates, measurable, token, type Corpus, type TaskStats } from './data'
 
 const ROW_H = 13, ROW_GAP = 2, HEAD_H = 22, LABEL_W = 210, SEC_PX = 2
 
@@ -16,6 +16,8 @@ interface Props {
 
 export default function Wall({ corpus, vHi, stats, order, highlight, onPick }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const [fontsReady, setFontsReady] = useState(false)
+  useEffect(() => { void document.fonts.ready.then(() => setFontsReady(true)) }, [])
   const S = corpus.config.clip_seconds
   const width = LABEL_W + S * SEC_PX
 
@@ -46,21 +48,26 @@ export default function Wall({ corpus, vHi, stats, order, highlight, onPick }: P
     g.setTransform(dpr, 0, 0, dpr, 0, 0)
     g.clearRect(0, 0, width, layout.height)
 
-    g.font = '600 11px ui-monospace, Menlo, monospace'
+    const ink = {
+      fg: token('fg'), dim: token('dim'), accent: token('accent'),
+      critical: token('critical'), rule: token('rule'),
+    }
+    const fills = [0, 1, 2, 3].map((i) => token(`state-${i}`))
+    g.font = '500 11px "IBM Plex Mono", ui-monospace, Menlo, monospace'
     for (const h of layout.heads) {
       const st = stats.get(h.task)
       const task = corpus.tasks.find((t) => t.id === h.task)
-      g.fillStyle = task && !measurable(task) ? '#6b7280' : '#e7e9ee'
+      g.fillStyle = task && !measurable(task) ? ink.dim : ink.fg
       g.fillText(task?.name ?? h.task, 0, h.y + 13)
       const usable = !task || measurable(task)
       if (st && usable) {
-        g.fillStyle = '#ffb020'
+        g.fillStyle = ink.accent
         g.fillText(`${(st.bimanual * 100).toFixed(0)}%`, LABEL_W - 34, h.y + 13)
       } else {
-        g.fillStyle = '#f87171'
+        g.fillStyle = ink.critical
         g.fillText('tracker fails', LABEL_W - 72, h.y + 13)
       }
-      g.fillStyle = '#2a2f38'
+      g.fillStyle = ink.rule
       g.fillRect(LABEL_W, h.y + 8, S * SEC_PX, 1)
     }
 
@@ -73,17 +80,18 @@ export default function Wall({ corpus, vHi, stats, order, highlight, onPick }: P
         (highlight && !highlight.has(row.clipIdx)) || (task && !measurable(task))
       g.globalAlpha = dim ? 0.18 : 1
       for (let s = 0; s < S; s++) {
-        g.fillStyle = STATE_COLORS[states[s]]
+        g.fillStyle = fills[states[s]]
         g.fillRect(LABEL_W + s * SEC_PX, row.y, SEC_PX, ROW_H)
       }
       g.globalAlpha = 1
     }
-  }, [corpus, vHi, layout, stats, width, S, highlight])
+  }, [corpus, vHi, layout, stats, width, S, highlight, fontsReady])
 
   return (
     <canvas
       ref={ref}
       className="cursor-crosshair"
+      aria-label="Every clip as a row of seconds, coloured by hand state and grouped by task. The Finding view has the same numbers as a table."
       onClick={(e) => {
         const r = ref.current!.getBoundingClientRect()
         const x = e.clientX - r.left, y = e.clientY - r.top

@@ -16,21 +16,21 @@ export default function Limitations({ corpus, vHi }: Props) {
     ['"Hands absent" is not proof the hands were gone', <>
       It means the tracker found nothing. {failed.length} of {corpus.tasks.length} tasks fall
       below 50% detection and are held out of every headline number rather than being quietly
-      averaged in — counting their seconds as "hands absent" would have turned busy tasks into
+      averaged in. Counting their seconds as "hands absent" would have turned busy tasks into
       idle-looking ones. Held out:{' '}
       {failed.sort((a, b) => a.det1 - b.det1).map((t) => `${t.name} (${pct(t.det1)})`).join(', ')}.
       <span className="mt-2 block">
         Three distinct causes, and we looked at footage from each rather than guessing:{' '}
-        <span className="text-fg">gloves</span> (bottle cleaning — MediaPipe's hand model does
+        <span className="text-fg">gloves</span> (bottle cleaning: MediaPipe's hand model does
         not fire on blue nitrile), <span className="text-fg">material coating the hands</span>{' '}
-        (plaster ceiling tile — hands caked in wet plaster lose every colour and texture cue),
-        and <span className="text-fg">occlusion</span> (lathe operation and fabric spreading —
+        (plaster ceiling tile, where hands caked in wet plaster lose every colour and texture cue),
+        and <span className="text-fg">occlusion</span> (lathe operation and fabric spreading, with
         hands behind the machine, under the workpiece, or small at the frame edge).
       </span>
       <img
         src={`${import.meta.env.BASE_URL}evidence/excluded-tasks-failure-modes.jpg`}
         alt="Three frames: a lathe with the operator's hands behind the machine; hands caked in wet plaster carrying a ceiling tile; hands at the far edge of a large fabric roll"
-        className="mt-3 w-full rounded border border-line"
+        className="mt-3 w-full rounded-md"
       />
       <span className="mt-1 block text-xs">
         Left to right: occlusion, plaster-caked hands, hands at the frame edge.
@@ -38,7 +38,7 @@ export default function Limitations({ corpus, vHi }: Props) {
       <img
         src={`${import.meta.env.BASE_URL}evidence/gloved-hands-detection-failure.jpg`}
         alt="Frame from bottle cleaning: a worker in blue nitrile gloves scrubbing at a sink, both hands clearly visible but undetected"
-        className="mt-3 w-full max-w-md rounded border border-line"
+        className="mt-3 w-full max-w-md rounded-md"
       />
       <span className="mt-1 block text-xs">
         Bottle cleaning, {pct(corpus.tasks.find((t) => t.id === 'bottle-cleaning')?.det1 ?? 0)}{' '}
@@ -50,7 +50,7 @@ export default function Limitations({ corpus, vHi }: Props) {
       example, 77% detection on lathe operation. Running all {corpus.clips.length} clips, that
       task comes out at 35%: its first clip does score 72%, and the other six run 13% to 49%.
       The spot check was not wrong, it was one clip. Within-task variance is large enough that
-      any single-clip number — including a reassuring one — should not be trusted. This is
+      any single-clip number, including a reassuring one, should not be trusted. This is
       visible directly on the corpus wall, where clips of the same task often look nothing alike.
     </>],
     ['One threshold, chosen from the data, not fitted per task', <>
@@ -61,7 +61,7 @@ export default function Limitations({ corpus, vHi }: Props) {
     </>],
     ['Body-relative, not metric', <>
       The camera is torso-mounted, so image coordinates track hand position relative to the
-      body with no calibration — that is the property this whole index rests on. But mount
+      body with no calibration, and the whole index rests on that property. But mount
       angle varies across cameras, so the reach envelope is comparable within a camera and
       only roughly across them. No depth, no 3D pose, no metric scale is claimed.
     </>],
@@ -79,7 +79,7 @@ export default function Limitations({ corpus, vHi }: Props) {
       Two IMU angles were measured and abandoned before this index existed. Gyro-magnitude
       autocorrelation for per-repetition work cycles: median peak 0.16, only 2 of 50 tasks
       above 0.30. Whitened spectral tonality for machine-vibration signatures: SNR ~2.1 on
-      every task, exactly the noise floor — the sidecars document that GPMF timestamps are
+      every task, exactly the noise floor. The sidecars document that GPMF timestamps are
       reconstructed by spreading samples uniformly inside ~1 s packets, which destroys the
       fine timing those methods need. The IMU is used here only for gross motion: gyro RMS
       and torso lean.
@@ -92,16 +92,16 @@ export default function Limitations({ corpus, vHi }: Props) {
   ]
 
   return (
-    <div className="h-full overflow-auto px-6 py-6">
-      <div className="mx-auto max-w-3xl">
-        <h2 className="text-xl font-semibold">What this does not show</h2>
+    <div className="px-4 py-8 sm:px-6 lg:h-full lg:overflow-auto">
+      <div className="mx-auto max-w-[70ch]">
+        <h2 className="font-display text-4xl font-extrabold tracking-wide uppercase">What this does not show</h2>
         <p className="mt-2 text-sm text-dim">
           Written before the demo, not after the questions.
         </p>
         <dl className="mt-5 space-y-4">
           {items.map(([title, body]) => (
-            <div key={title} className="rounded border border-line bg-panel p-4">
-              <dt className="text-sm font-medium text-accent">{title}</dt>
+            <div key={title} className="rounded-md bg-panel p-5">
+              <dt className="font-medium text-fg">{title}</dt>
               <dd className="mt-1 text-sm leading-relaxed text-dim">{body}</dd>
             </div>
           ))}
