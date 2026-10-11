@@ -32,7 +32,9 @@ cd web && pnpm install && pnpm dev
 
 Open http://localhost:5173. Point the explorer somewhere else — an S3 bucket, a CDN — by
 setting `VITE_MEDIA_BASE`; it defaults to `http://127.0.0.1:8765`. The index itself is
-static data, so the app works without the media server; only playback needs it.
+static data, so the app works without the media server; only playback needs it, and
+without it the player shows the bundled 8-second sample for that task instead. A deployed
+build never probes localhost unless `VITE_MEDIA_BASE` is set.
 
 ## Rebuild the index
 

@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
-import { STATE_COLORS, STATE_NAMES, clipStates, clock, media, type Corpus } from './data'
+import { STATE_COLORS, STATE_INK, STATE_NAMES, clipStates, clock, media, type Corpus } from './data'
+import MediaFallback from './MediaFallback'
 
-interface Props { corpus: Corpus; clipIdx: number; second: number; vHi: number }
+interface Props { corpus: Corpus; clipIdx: number; second: number; vHi: number; media: boolean }
 
-export default function Player({ corpus, clipIdx, second, vHi }: Props) {
+export default function Player({ corpus, clipIdx, second, vHi, media: hasMedia }: Props) {
   const clip = corpus.clips[clipIdx]
   const video = useRef<HTMLVideoElement>(null)
   const states = clipStates(corpus, clipIdx, vHi)
@@ -20,48 +21,49 @@ export default function Player({ corpus, clipIdx, second, vHi }: Props) {
   }, [clipIdx, second])
 
   return (
-    <div className="flex flex-col gap-2">
-      <video
-        ref={video}
-        key={clip.id}
-        src={`${media(clip.path)}#t=${second}`}
-        poster={media(clip.thumb)}
-        controls
-        autoPlay
-        muted
-        playsInline
-        className="w-full rounded bg-black aspect-video"
-      />
-      <div className="flex items-center gap-3 text-xs">
+    <div className="flex flex-col gap-3">
+      {hasMedia ? (
+        <video
+          ref={video}
+          key={clip.id}
+          src={`${media(clip.path)}#t=${second}`}
+          poster={media(clip.thumb)}
+          controls autoPlay muted playsInline
+          className="aspect-video w-full rounded-md bg-black"
+        />
+      ) : (
+        <MediaFallback corpus={corpus} taskId={clip.task} />
+      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         <span
-          className="num rounded px-2 py-0.5 font-semibold text-ink"
-          style={{ background: STATE_COLORS[state] }}
+          className="rounded px-2 py-0.5 font-semibold"
+          style={{ background: STATE_COLORS[state], color: STATE_INK[state] }}
         >
           {STATE_NAMES[state]}
         </span>
-        <span className="num text-dim">{clock(second)}</span>
-        <span className="text-fg">{task?.name}</span>
-        <span className="num text-dim truncate">{clip.id}</span>
+        <span className="num text-dim">at {clock(second)}</span>
+        <span className="font-medium text-fg">{task?.name}</span>
       </div>
-      <div className="flex h-3 w-full overflow-hidden rounded-sm">
+      <div className="flex h-3 w-full overflow-hidden rounded-sm" aria-hidden>
         {Array.from(states).map((s, i) => (
           <div
             key={i}
             className="h-full flex-1"
             style={{
               background: STATE_COLORS[s],
-              outline: i === second ? '1px solid #fff' : undefined,
+              outline: i === second ? '2px solid var(--color-fg)' : undefined,
             }}
           />
         ))}
       </div>
       <p className="text-xs text-dim">
-        Camera {clip.cam.slice(4, 10)} · repetition {clip.rep.slice(4, 10)} · clip{' '}
-        {clip.idx + 1} of {task?.clips}
+        Clip {clip.idx + 1} of {task?.clips} · camera{' '}
+        <span className="num">{clip.cam.slice(4, 10)}</span> · repetition{' '}
+        <span className="num">{clip.rep.slice(4, 10)}</span>
       </p>
       {narration && (
-        <details className="rounded border border-line bg-ink p-2 text-xs">
-          <summary className="cursor-pointer text-accent">Hear the index read this clip</summary>
+        <details className="rounded-md bg-surface p-3 text-xs">
+          <summary className="cursor-pointer font-medium text-accent">Hear the index read this clip</summary>
           <audio
             controls
             src={`${import.meta.env.BASE_URL}${narration.audio}`}
@@ -69,8 +71,8 @@ export default function Player({ corpus, clipIdx, second, vHi }: Props) {
           />
           <p className="mt-2 leading-relaxed text-dim">{narration.text}</p>
           <p className="mt-1 text-[11px] text-dim">
-            Synthesised speech over computed statistics. The script is generated from the
-            per-second timeline above — no model watched this video to describe it.
+            Synthesised speech over computed statistics. The script comes from the per-second
+            timeline above; no model watched this video to describe it.
           </p>
         </details>
       )}

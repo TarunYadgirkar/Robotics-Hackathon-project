@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useReducedMotion } from './hooks'
 import { BIMANUAL, clipStates, measurable, media, type Corpus } from './data'
 
 const WINDOW = 8
@@ -44,31 +45,32 @@ export default function Montage({ corpus, vHi }: { corpus: Corpus; vHi: number }
     return picks.sort((a, b) => b.score - a.score).slice(0, 25)
   }, [corpus, vHi])
 
+  const reduced = useReducedMotion()
   const perfect = tiles.filter((t) => t.score === WINDOW).length
 
   return (
-    <div className="h-full overflow-auto p-4">
-      <p className="mb-3 max-w-3xl text-xs text-dim">
-        <span className="num text-fg">{tiles.length}</span> tasks,{' '}
-        <span className="num text-fg">{tiles.length}</span> moments, chosen by the index
-        alone: for each task, the {WINDOW}-second window it scores as most two-handed. Nobody
+    <div className="p-4 sm:p-6 lg:h-full lg:overflow-auto">
+      <p className="mb-4 max-w-[65ch] text-sm leading-relaxed text-dim">
+        One moment from each of <span className="num text-fg">{tiles.length}</span> tasks,
+        chosen by the index alone: the {WINDOW}-second window it scores as most two-handed. Nobody
         watched these before they were picked.{' '}
         <span className="num text-fg">{perfect}</span> of {tiles.length} score a full{' '}
-        {WINDOW} out of {WINDOW} seconds. Check them — that is the point of showing them
-        rather than describing them.
+        {WINDOW} out of {WINDOW} seconds. Watch them and judge the index by its picks.
+        {reduced && ' Motion is reduced on this device, so press play on any tile.'}
       </p>
       <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
         {tiles.map((t) => {
           const task = corpus.tasks.find((x) => x.id === t.task)
           return (
-            <figure key={t.task} className="overflow-hidden rounded border border-line bg-panel">
+            <figure key={t.task} className="overflow-hidden rounded-md bg-panel">
               <video
                 src={t.src}
-                autoPlay loop muted playsInline
+                aria-label={`${task?.name ?? t.task}, ${t.score} of ${WINDOW} seconds two-handed`}
+                autoPlay={!reduced} controls={reduced} loop muted playsInline
                 className="aspect-video w-full bg-black"
               />
               <figcaption className="flex items-baseline justify-between gap-2 px-2 py-1 text-xs">
-                <span className="truncate">{task?.name}</span>
+                <span className="truncate" title={task?.name}>{task?.name}</span>
                 <span className="num text-accent">
                   {t.score}/{WINDOW}
                 </span>

@@ -2,7 +2,14 @@ export const ABSENT = 0, TRANSIT = 1, UNIMANUAL = 2, BIMANUAL = 3
 export type State = 0 | 1 | 2 | 3
 
 export const STATE_NAMES = ['Hands absent', 'Transit', 'One-handed', 'Two-handed'] as const
-export const STATE_COLORS = ['#171a20', '#2f4d78', '#a06a1c', '#ffb020'] as const
+export const STATE_COLORS = [0, 1, 2, 3].map((i) => `var(--color-state-${i})`)
+
+/** Readable text on each state fill: light on the two dark states, dark on the ambers. */
+export const STATE_INK = ['var(--color-fg)', 'var(--color-fg)', 'var(--color-surface)', 'var(--color-surface)']
+
+/** Canvas can't read CSS variables, so resolve a theme token to its computed value. */
+export const token = (name: string) =>
+  getComputedStyle(document.documentElement).getPropertyValue(`--color-${name}`).trim()
 
 export interface Clip {
   id: string; task: string; idx: number; cam: string; rep: string; seq: string
@@ -32,21 +39,25 @@ export interface Corpus {
   } | null
 }
 
-export const MEDIA_BASE = (
-  import.meta.env.VITE_MEDIA_BASE ?? 'http://127.0.0.1:8765'
-).replace(/\/$/, '')
+const EXPLICIT_BASE = import.meta.env.VITE_MEDIA_BASE as string | undefined
+
+export const MEDIA_BASE = (EXPLICIT_BASE ?? 'http://127.0.0.1:8765').replace(/\/$/, '')
 
 export const media = (p: string) => `${MEDIA_BASE}/${p}`
 
-/** Is the local media server actually there? Deployed builds usually have no drive. */
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+const PROBE_TIMEOUT_MS = 2500
+
+/**
+ * Is the media server there? A public build with no explicit base never probes
+ * localhost, so visitors don't get a local-network permission prompt.
+ */
 export async function mediaReachable(): Promise<boolean> {
+  if (!EXPLICIT_BASE && !LOCAL_HOSTS.has(window.location.hostname)) return false
   try {
-    const ctl = new AbortController()
-    const timer = setTimeout(() => ctl.abort(), 2500)
     const r = await fetch(`${MEDIA_BASE}/meta/dataset.json`, {
-      method: 'HEAD', signal: ctl.signal,
+      method: 'HEAD', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     })
-    clearTimeout(timer)
     return r.ok
   } catch {
     return false
@@ -165,10 +176,20 @@ export function taskStats(c: Corpus, vHi: number): Map<string, TaskStats> {
 export const DETECTION_FLOOR = 0.5
 export const measurable = (t: Task) => t.det1 >= DETECTION_FLOOR
 
+/** State tallies over measurable tasks only, the basis of every headline number. */
+export function measurableTotals(c: Corpus, stats: Map<string, TaskStats>) {
+  const totals = [0, 0, 0, 0]
+  for (const t of c.tasks) {
+    if (!measurable(t)) continue
+    stats.get(t.id)?.tallies.forEach((v, i) => (totals[i] += v))
+  }
+  return { totals, grand: totals.reduce((a, b) => a + b, 0) || 1 }
+}
+
 export const pct = (x: number) => `${(x * 100).toFixed(1)}%`
 export const clock = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
-export const hours = (s: number) => `${(s / 3600).toFixed(1)} h`
+export const hours = (s: number) => `${(s / 3600).toFixed(1)}\u2009h`
 
 /** Spearman rank correlation between two equal-length score vectors. */
 export function spearman(a: number[], b: number[]): number {
